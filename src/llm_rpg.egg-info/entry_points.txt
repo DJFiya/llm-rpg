@@ -1,0 +1,2 @@
+[console_scripts]
+llm-rpg = llm_rpg.main:main

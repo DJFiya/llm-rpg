@@ -8,6 +8,7 @@ from rich.prompt import Prompt
 from rich.rule import Rule
 from rich.table import Table
 
+from .cli_menus import MenuOption, ask_menu
 from .config import Config
 from .engine.engine import Engine
 from .game import new_game, session
@@ -15,14 +16,35 @@ from .llm.base import LLMProvider, build_provider
 from .rng import seed_from_text
 
 HELP_TEXT = """\
-Type what you want to do in plain language, e.g.:
-  look around            go north            take the rusty key
-  talk to the stranger   attack the wolf     inventory
+Type what you want to do in plain language, or use a single-key shortcut:
 
-Slash commands:
-  /look   re-describe where you are     /map    show the discovered map
-  /help   show this help                /quit   save and exit
+  [l] look around     [n] go north   [s] go south   [e] go east   [w] go west
+  [i] inventory       [m] map        [h] help       [q] quit
+
+Examples: "take the rusty key", "talk to the stranger", "attack the wolf"
 """
+
+
+# Single-key in-game shortcuts -> text sent to the engine (or a slash command).
+QUICK_KEYS: dict[str, str] = {
+    "l": "look around",
+    "i": "inventory",
+    "n": "go north",
+    "s": "go south",
+    "e": "go east",
+    "w": "go west",
+    "h": "/help",
+    "m": "/map",
+    "q": "/quit",
+}
+
+
+def resolve_player_input(raw: str) -> str:
+    """Expand a single-key shortcut; leave everything else unchanged."""
+    key = raw.strip().lower()
+    if len(key) == 1 and key in QUICK_KEYS:
+        return QUICK_KEYS[key]
+    return raw
 
 
 class GameCLI:
@@ -51,16 +73,19 @@ class GameCLI:
     # --- Menus ----------------------------------------------------------------
     def _main_menu(self) -> session.Session | None:
         saves = session.list_saves(self.config)
-        choices = ["new"]
+        options = [
+            MenuOption("n", "New game", "new"),
+        ]
         if saves:
-            choices.append("load")
-        choices.append("quit")
-        prompt = "Start a [new] game"
-        if saves:
-            prompt += ", [load] a save"
-        prompt += ", or [quit]"
-        self.console.print(prompt)
-        choice = Prompt.ask("Choose", choices=choices, default="new")
+            options.append(MenuOption("l", "Load save", "load"))
+        options.append(MenuOption("q", "Quit", "quit"))
+
+        choice = ask_menu(
+            self.console,
+            options,
+            title="Welcome. What would you like to do?",
+            default_key="n",
+        )
 
         if choice == "quit":
             return None
@@ -83,10 +108,12 @@ class GameCLI:
                 str(info.run.turn),
             )
         self.console.print(table)
+
+        keys = [str(i) for i in range(1, len(saves) + 1)]
         idx = int(
             Prompt.ask(
-                "Load which save (number)",
-                choices=[str(i) for i in range(1, len(saves) + 1)],
+                f"Load save [{ ' / '.join(keys) }]",
+                choices=keys,
                 default="1",
             )
         )
@@ -94,22 +121,34 @@ class GameCLI:
 
     def _new_game_menu(self) -> session.Session:
         self.console.print(Rule("New game"))
-        self.console.print(
-            "How would you like to begin?\n"
-            "  [describe] tell me the world you want\n"
-            "  [preset]   pick a built-in setting\n"
-            "  [surprise] let me invent one"
-        )
-        mode = Prompt.ask(
-            "Choose",
-            choices=["describe", "preset", "surprise"],
-            default="describe",
+        mode = ask_menu(
+            self.console,
+            [
+                MenuOption("1", "Describe your world", "describe"),
+                MenuOption("2", "Pick a built-in preset", "preset"),
+                MenuOption("3", "Surprise me (random)", "surprise"),
+            ],
+            title="How would you like to begin?",
+            default_key="1",
+            extra_aliases={
+                "d": "describe",
+                "p": "preset",
+                "s": "surprise",
+            },
         )
 
         if mode == "preset":
             names = new_game.preset_names()
-            self.console.print("Presets: " + ", ".join(names))
-            name = Prompt.ask("Which preset", choices=names, default=names[0])
+            preset_options = [
+                MenuOption(str(i), name, name)
+                for i, name in enumerate(names, 1)
+            ]
+            name = ask_menu(
+                self.console,
+                preset_options,
+                title="Choose a preset:",
+                default_key="1",
+            )
             world_prompt = new_game.preset_prompt(name)
         elif mode == "surprise":
             world_prompt = new_game.random_prompt()
@@ -128,7 +167,6 @@ class GameCLI:
             new_game.seed_world(
                 sess.repo, self.llm, sess.run, self.config.json_repair_retries
             )
-        # Refresh run (genre/player set during seeding).
         refreshed = sess.repo.get_run(sess.run.id)
         if refreshed is not None:
             sess.run = refreshed
@@ -150,6 +188,7 @@ class GameCLI:
             if not player_text:
                 continue
 
+            player_text = resolve_player_input(player_text)
             lowered = player_text.lower()
             if lowered in {"/quit", "/exit", "quit", "exit"}:
                 self.console.print("Saving and exiting.")
@@ -169,8 +208,10 @@ class GameCLI:
             self.console.print(f"\n{output.narration}")
             if output.player_dead:
                 self.console.print(
-                    Panel("[bold red]You have died.[/bold red] The story ends here.",
-                          border_style="red")
+                    Panel(
+                        "[bold red]You have died.[/bold red] The story ends here.",
+                        border_style="red",
+                    )
                 )
                 return
 
@@ -214,11 +255,14 @@ class GameCLI:
             marker = "@" if loc.id == player_loc else "#"
             grid[(loc.x, loc.y)] = marker
         lines = []
-        for y in range(max_y, min_y - 1, -1):  # north at top
+        for y in range(max_y, min_y - 1, -1):
             row = "".join(grid.get((x, y), ".") for x in range(min_x, max_x + 1))
             lines.append(row)
         legend = "[dim]@ = you   # = visited   . = unknown[/dim]"
         self.console.print(
-            Panel("\n".join(lines) + f"\n\n{legend}", title="Discovered map",
-                  border_style="magenta")
+            Panel(
+                "\n".join(lines) + f"\n\n{legend}",
+                title="Discovered map",
+                border_style="magenta",
+            )
         )

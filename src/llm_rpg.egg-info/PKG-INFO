@@ -1,3 +1,21 @@
+Metadata-Version: 2.4
+Name: llm-rpg
+Version: 0.1.0
+Summary: An LLM-narrated text RPG with a deterministic, hallucination-resistant world-state engine.
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: pydantic>=2.6
+Requires-Dist: rich>=13.7
+Requires-Dist: PyYAML>=6.0
+Provides-Extra: openai
+Requires-Dist: openai>=1.30; extra == "openai"
+Provides-Extra: anthropic
+Requires-Dist: anthropic>=0.25; extra == "anthropic"
+Provides-Extra: ollama
+Requires-Dist: httpx>=0.27; extra == "ollama"
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0; extra == "dev"
+
 # LLM RPG
 
 An LLM-narrated text RPG that procedurally generates a world around your
@@ -102,25 +120,16 @@ python run.py
 
 ### In-game
 
-Type what you want to do in plain language, or use single-key shortcuts:
+Type what you want to do in plain language:
 
-| Key | Action |
-|-----|--------|
-| `l` | look around |
-| `n` `s` `e` `w` | go north / south / east / west |
-| `i` | inventory |
-| `m` | show map |
-| `h` | help |
-| `q` | save and quit |
+```
+look around          go north          take the rusty key
+talk to the stranger attack the wolf   inventory
+```
 
-You can still type full phrases: `take the rusty key`, `talk to the stranger`,
-`attack the wolf`, etc.
-
-Menus also use single keys: main menu `[n]` new / `[l]` load / `[q]` quit;
-new game `[1]` describe / `[2]` preset / `[3]` surprise (or `d` / `p` / `s`).
-
-Saves are stored as one SQLite file per run in `saves/` and offered on the next
-launch.
+Slash commands: `/look` (re-describe), `/map` (show discovered map), `/help`,
+`/quit` (save and exit). Saves are stored as one SQLite file per run in
+`saves/` and offered on the next launch.
 
 ## Configuration
 
