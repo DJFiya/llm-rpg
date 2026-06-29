@@ -75,6 +75,14 @@ CREATE TABLE IF NOT EXISTS inventory (
     PRIMARY KEY (owner_id, item_id)
 );
 
+-- Equipped gear: weapon, armor, etc. Mechanical bonuses flow from item stats.
+CREATE TABLE IF NOT EXISTS equipped (
+    owner_id TEXT NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+    slot     TEXT NOT NULL,
+    item_id  TEXT NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+    PRIMARY KEY (owner_id, slot)
+);
+
 -- Directed relationships between entities (e.g. a->b "trusts" 0.7).
 CREATE TABLE IF NOT EXISTS relationships (
     a_id  TEXT NOT NULL REFERENCES entities(id) ON DELETE CASCADE,

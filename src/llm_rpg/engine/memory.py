@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from ..state.models import EntityType, Run
 from ..state.repository import Repository
+from .equipment import item_slot, player_loadout
 from .world_gen import DIRECTION_NAMES
 
 
@@ -80,11 +81,14 @@ def build_context(repo: Repository, run: Run, memory_window: int) -> dict:
     }
     if player_id:
         player = _entity_brief(repo, player_id)
-        inv = [
-            {"name": item.name, "qty": qty}
-            for item, qty in repo.inventory(player_id)
-        ]
+        inv = []
+        for item, qty in repo.inventory(player_id):
+            entry = {"name": item.name, "qty": qty}
+            entry["slot"] = item_slot(repo, run.id, item.id)
+            entry["stats"] = repo.get_stats(item.id)
+            inv.append(entry)
         player["inventory"] = inv
+        player["loadout"] = player_loadout(repo, run, player_id)
         context["player"] = player
     if location_id:
         context["location"] = location_context(repo, run, location_id)

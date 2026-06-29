@@ -294,6 +294,34 @@ class Repository:
             result.append((Entity.model_validate(data), qty))
         return result
 
+    # --- Equipment ------------------------------------------------------------
+    def equip(self, owner_id: str, slot: str, item_id: str) -> None:
+        self.conn.execute(
+            """INSERT INTO equipped (owner_id, slot, item_id) VALUES (?, ?, ?)
+               ON CONFLICT(owner_id, slot) DO UPDATE SET item_id = excluded.item_id""",
+            (owner_id, slot, item_id),
+        )
+
+    def unequip(self, owner_id: str, slot: str) -> None:
+        self.conn.execute(
+            "DELETE FROM equipped WHERE owner_id = ? AND slot = ?",
+            (owner_id, slot),
+        )
+
+    def get_equipped(self, owner_id: str, slot: str) -> str | None:
+        row = self.conn.execute(
+            "SELECT item_id FROM equipped WHERE owner_id = ? AND slot = ?",
+            (owner_id, slot),
+        ).fetchone()
+        return row["item_id"] if row else None
+
+    def all_equipped(self, owner_id: str) -> dict[str, str]:
+        rows = self.conn.execute(
+            "SELECT slot, item_id FROM equipped WHERE owner_id = ?",
+            (owner_id,),
+        ).fetchall()
+        return {r["slot"]: r["item_id"] for r in rows}
+
     # --- Facts ----------------------------------------------------------------
     def set_fact(self, run_id: str, subject_id: str, key: str, value: str) -> None:
         self.conn.execute(

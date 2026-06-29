@@ -13,11 +13,17 @@ from typing import Any
 
 from ..llm.base import LLMProvider
 from ..rng import GameRNG
-from ..state.models import Action, Entity, EntityType, Run
+from ..state.models import Action, ActionType, Entity, EntityType, Run
 from ..state.repository import Repository
 from . import combat, world_gen
 from .consistency import ConsistencyError
 from .dialogue import generate_npc_reply, persist_dialogue
+from .equipment import (
+    get_equipped,
+    item_slot,
+    player_loadout,
+    try_auto_equip,
+)
 
 
 @dataclass
@@ -126,8 +132,12 @@ def handle_take(ctx: TurnContext, action: Action) -> ActionResult:
         )
     ctx.repo.place_entity(ctx.run.id, entity.id, None)
     ctx.repo.add_to_inventory(ctx.run.player_id, entity.id, 1)
+    slot = try_auto_equip(ctx.repo, ctx.run.id, ctx.run.player_id, entity.id)
     ctx.repo.commit()
-    return ActionResult("take", f"You take the {entity.name}.", {"item": entity.name})
+    msg = f"You take the {entity.name}."
+    if slot:
+        msg += f" You equip it as your {slot}."
+    return ActionResult("take", msg, {"item": entity.name, "equipped_slot": slot})
 
 
 def handle_talk(ctx: TurnContext, action: Action) -> ActionResult:
@@ -191,14 +201,19 @@ def handle_attack(ctx: TurnContext, action: Action) -> ActionResult:
         )
     try:
         result = combat.resolve_attack(
-            ctx.repo, ctx.rng, ctx.run.player_id, entity.id
+            ctx.repo, ctx.rng, ctx.run.player_id, entity.id, run_id=ctx.run.id
         )
     except ConsistencyError as exc:
         return ActionResult("attack", str(exc), {"failed": True})
     ctx.repo.commit()
 
+    weapon = get_equipped(ctx.repo, ctx.run.id, ctx.run.player_id, "weapon")
+    weapon_note = ""
+    if weapon:
+        weapon_note = f" (using {weapon.name})"
     parts = [
-        f"You strike {result.defender_name} for {result.damage_to_defender} damage."
+        f"You strike {result.defender_name} for {result.damage_to_defender} damage"
+        f"{weapon_note}."
     ]
     if result.defender_dead:
         parts.append(f"{result.defender_name} falls, defeated.")
@@ -223,7 +238,49 @@ def handle_attack(ctx: TurnContext, action: Action) -> ActionResult:
             "player_hp": result.attacker_hp,
             "defender_dead": result.defender_dead,
             "player_dead": result.attacker_dead,
+            "attack_used": result.attacker_attack_used,
+            "defense_used": result.attacker_defense_used,
         },
+    )
+
+
+def _find_inventory_item(ctx: TurnContext, target: str) -> Entity | None:
+    target_l = target.strip().lower()
+    if not target_l:
+        return None
+    for item, _qty in ctx.repo.inventory(ctx.run.player_id):
+        name_l = item.name.lower()
+        if name_l == target_l or target_l in name_l or name_l in target_l:
+            return item
+    return None
+
+
+def handle_equip(ctx: TurnContext, action: Action) -> ActionResult:
+    if not ctx.run.player_id:
+        return ActionResult("equip", "You have nothing to equip.")
+    item = _find_inventory_item(ctx, action.target or "")
+    if item is None:
+        return ActionResult(
+            "equip",
+            f"You don't carry {action.target or 'that'}.",
+            {"failed": True},
+        )
+    slot = item_slot(ctx.repo, ctx.run.id, item.id)
+    if slot not in {"weapon", "armor"}:
+        return ActionResult(
+            "equip",
+            f"The {item.name} is not something you can wield or wear.",
+            {"failed": True},
+        )
+    ctx.repo.equip(ctx.run.player_id, slot, item.id)
+    ctx.repo.commit()
+    loadout = player_loadout(ctx.repo, ctx.run, ctx.run.player_id)
+    eff = loadout["effective_stats"]
+    return ActionResult(
+        "equip",
+        f"You equip the {item.name} as your {slot}. "
+        f"Effective attack: {int(eff['attack'])}, defense: {int(eff['defense'])}.",
+        {"item": item.name, "slot": slot, "effective_stats": eff},
     )
 
 
@@ -231,29 +288,41 @@ def handle_inventory(ctx: TurnContext, action: Action) -> ActionResult:
     if not ctx.run.player_id:
         return ActionResult("inventory", "You are carrying nothing.")
     items = ctx.repo.inventory(ctx.run.player_id)
-    hp = ctx.repo.get_stat(ctx.run.player_id, "hp")
-    atk = ctx.repo.get_stat(ctx.run.player_id, "attack")
-    stats_note = ""
-    if hp is not None:
-        stats_note = f" HP: {int(hp)}."
-        if atk is not None:
-            stats_note = f" HP: {int(hp)}, Attack: {int(atk)}."
+    loadout = player_loadout(ctx.repo, ctx.run, ctx.run.player_id)
+    eff = loadout["effective_stats"]
+    stats_note = (
+        f" Effective attack: {int(eff['attack'])}, "
+        f"defense: {int(eff['defense'])}, "
+        f"HP: {int(eff['hp'] or 0)}."
+    )
+    equipped_lines = []
+    for slot, data in loadout["equipped"].items():
+        if data:
+            bonus = data.get("stats", {})
+            extra = ""
+            if bonus.get("attack"):
+                extra = f" (+{int(bonus['attack'])} atk)"
+            elif bonus.get("defense"):
+                extra = f" (+{int(bonus['defense'])} def)"
+            equipped_lines.append(f"{slot}: {data['name']}{extra}")
+    equip_note = ""
+    if equipped_lines:
+        equip_note = " Equipped: " + ", ".join(equipped_lines) + "."
     if not items:
         return ActionResult(
             "inventory",
-            f"You are carrying nothing.{stats_note}",
-            {"items": [], "player_hp": hp, "player_attack": atk},
+            f"You are carrying nothing.{equip_note}{stats_note}",
+            {"items": [], "loadout": loadout},
         )
     listing = ", ".join(
         f"{item.name}" + (f" x{qty}" if qty > 1 else "") for item, qty in items
     )
     return ActionResult(
         "inventory",
-        f"You are carrying: {listing}.{stats_note}",
+        f"You are carrying: {listing}.{equip_note}{stats_note}",
         {
             "items": [{"name": item.name, "qty": qty} for item, qty in items],
-            "player_hp": hp,
-            "player_attack": atk,
+            "loadout": loadout,
         },
     )
 
@@ -261,13 +330,15 @@ def handle_inventory(ctx: TurnContext, action: Action) -> ActionResult:
 def handle_use(ctx: TurnContext, action: Action) -> ActionResult:
     if not ctx.run.player_id:
         return ActionResult("use", "You have nothing to use.")
-    target_l = (action.target or "").strip().lower()
-    for item, _qty in ctx.repo.inventory(ctx.run.player_id):
-        if target_l and (target_l in item.name.lower() or item.name.lower() in target_l):
-            return ActionResult("use", f"You use the {item.name}.", {"item": item.name})
-    return ActionResult(
-        "use", f"You don't have {action.target or 'that'}.", {"failed": True}
-    )
+    item = _find_inventory_item(ctx, action.target or "")
+    if item is None:
+        return ActionResult(
+            "use", f"You don't have {action.target or 'that'}.", {"failed": True}
+        )
+    slot = item_slot(ctx.repo, ctx.run.id, item.id)
+    if slot in {"weapon", "armor"}:
+        return handle_equip(ctx, Action(type=ActionType.equip, target=item.name))
+    return ActionResult("use", f"You use the {item.name}.", {"item": item.name})
 
 
 def handle_say(ctx: TurnContext, action: Action) -> ActionResult:
@@ -288,6 +359,7 @@ HANDLERS = {
     "talk": handle_talk,
     "attack": handle_attack,
     "inventory": handle_inventory,
+    "equip": handle_equip,
     "use": handle_use,
     "say": handle_say,
     "unknown": handle_unknown,

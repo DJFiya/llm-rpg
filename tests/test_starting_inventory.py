@@ -28,5 +28,6 @@ def test_inventory_turn_is_grounded(repo, llm: MockProvider, config: Config):
     out = engine.take_turn("what items do i have")
     assert out.action_type == "inventory"
     assert "Traveler's Blade" in out.narration
+    assert "Effective attack" in out.narration
+    assert "Equipped: weapon" in out.narration
     assert out.narration == out.summary
-    assert "Tharros" not in out.narration

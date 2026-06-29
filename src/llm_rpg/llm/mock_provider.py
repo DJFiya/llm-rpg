@@ -116,7 +116,9 @@ class MockProvider(LLMProvider):
             action = {"type": "talk", "target": target or None, "text": None}
         elif verb in {"attack", "fight", "hit", "kill", "strike"}:
             action = {"type": "attack", "target": rest or None}
-        elif verb in {"use", "apply", "equip"}:
+        elif verb in {"equip", "wield", "wear", "don"}:
+            action = {"type": "equip", "target": rest.replace("the ", "") or None}
+        elif verb in {"use", "apply"}:
             action = {"type": "use", "target": rest or None}
         elif verb in {"say", "shout", "yell"}:
             action = {"type": "say", "text": rest or None}
@@ -142,7 +144,7 @@ class MockProvider(LLMProvider):
                 {
                     "type": "item",
                     "name": f"Worn {self._pick(h + 'i', ['Token', 'Charm', 'Key'])}",
-                    "facts": [{"key": "condition", "value": "weathered"}],
+                    "facts": [{"key": "slot", "value": "misc"}],
                     "stats": [],
                 },
             ],
@@ -165,6 +167,14 @@ class MockProvider(LLMProvider):
                     "stats": [],
                 }
             )
+        payload["entities"].append(
+            {
+                "type": "item",
+                "name": f"Rusty {self._pick(h + 'w', ['Blade', 'Dagger', 'Axe'])}",
+                "facts": [{"key": "slot", "value": "weapon"}],
+                "stats": [{"key": "attack", "value": 2.0}],
+            }
+        )
         return json.dumps(payload)
 
     def _dialogue(self, user: str) -> str:
@@ -237,8 +247,11 @@ class MockProvider(LLMProvider):
                 {
                     "type": "item",
                     "name": "Traveler's Blade",
-                    "facts": [{"key": "condition", "value": "well-worn"}],
-                    "stats": [],
+                    "facts": [
+                        {"key": "slot", "value": "weapon"},
+                        {"key": "condition", "value": "well-worn"},
+                    ],
+                    "stats": [{"key": "attack", "value": 3.0}],
                 },
             ],
             "opening_quest": "Discover what lies beyond the first horizon.",

@@ -21,7 +21,7 @@ Type what you want to do in plain language, or use a single-key shortcut:
   [l] look around     [n] go north   [s] go south   [e] go east   [w] go west
   [i] inventory       [m] map        [h] help       [q] quit
 
-Examples: "take the rusty key", "talk to the stranger", "attack the wolf"
+Examples: "take the rusty key", "equip sword", "talk to the stranger", "attack the wolf"
 """
 
 
@@ -256,40 +256,54 @@ class GameCLI:
     def _carrying_label(self, engine: Engine) -> str:
         if not engine.run.player_id:
             return "nothing"
+        from .engine.equipment import player_loadout
+
+        loadout = player_loadout(engine.repo, engine.run, engine.run.player_id)
+        parts = []
+        for slot, data in loadout["equipped"].items():
+            if data:
+                parts.append(f"{data['name']} [{slot}]")
         items = engine.repo.inventory(engine.run.player_id)
-        if not items:
-            return "nothing"
-        return ", ".join(
-            f"{item.name}" + (f" x{qty}" if qty > 1 else "") for item, qty in items
-        )
+        for item, qty in items:
+            if not any(data and data["name"] == item.name for data in loadout["equipped"].values()):
+                parts.append(f"{item.name}" + (f" x{qty}" if qty > 1 else ""))
+        return ", ".join(parts) if parts else "nothing"
 
     def _print_carrying(self, engine: Engine, *, title: str = "Inventory") -> None:
         if not engine.run.player_id:
             return
+        from .engine.equipment import player_loadout
+
+        loadout = player_loadout(engine.repo, engine.run, engine.run.player_id)
         items = engine.repo.inventory(engine.run.player_id)
-        hp = engine.repo.get_stat(engine.run.player_id, "hp")
-        atk = engine.repo.get_stat(engine.run.player_id, "attack")
-        if not items and hp is None:
-            return
+        eff = loadout["effective_stats"]
         lines = []
+        for slot, data in loadout["equipped"].items():
+            if data:
+                stats = data.get("stats", {})
+                bonus = ""
+                if stats.get("attack"):
+                    bonus = f" (+{int(stats['attack'])} atk)"
+                elif stats.get("defense"):
+                    bonus = f" (+{int(stats['defense'])} def)"
+                lines.append(f"Equipped {slot}: {data['name']}{bonus}")
         if items:
-            lines.append(
-                "Carrying: "
-                + ", ".join(
-                    f"{item.name}" + (f" x{qty}" if qty > 1 else "")
-                    for item, qty in items
-                )
+            carried = ", ".join(
+                f"{item.name}" + (f" x{qty}" if qty > 1 else "")
+                for item, qty in items
             )
-        else:
-            lines.append("Carrying: nothing")
-        if hp is not None:
-            stat = f"HP: {int(hp)}"
-            if atk is not None:
-                stat += f" | Attack: {int(atk)}"
-            lines.append(stat)
-        self.console.print(
-            Panel("\n".join(lines), title=title, border_style="yellow")
-        )
+            lines.append(f"Carrying: {carried}")
+        elif not any(loadout["equipped"].values()):
+            return
+        if eff.get("hp") is not None:
+            lines.append(
+                f"Effective — Attack: {int(eff['attack'])}, "
+                f"Defense: {int(eff['defense'])}, HP: {int(eff['hp'])}"
+            )
+        if lines:
+            self.console.print(
+                Panel("\n".join(lines), title=title, border_style="yellow")
+            )
 
     def _show_map(self, sess: session.Session) -> None:
         locations = sess.repo.all_locations(sess.run.id)

@@ -16,7 +16,8 @@ single structured action. Choose the closest matching action type:
 - take: pick up an item (set 'target' to the item name)
 - talk: speak to an NPC (set 'target' to the NPC name, 'text' to what is said)
 - attack: fight a target (set 'target' to the enemy name)
-- use: use an item (set 'target')
+- equip: wield or wear an item from inventory (set 'target' to the item name)
+- use: use an item (set 'target'); equips weapons/armor automatically
 - say: say something aloud with no specific NPC target (set 'text')
 - inventory: check carried items (also: "what items do I have", "what am I carrying")
 - unknown: anything that doesn't fit
@@ -40,6 +41,8 @@ REQUIRED:
 - A vivid name and description for the place.
 - Include 1-3 interactable entities in 'entities': at least one must be an item, \
 npc, or enemy the player can take, talk to, or fight. Empty rooms are not allowed.
+- Items must include a 'slot' fact (weapon, armor, or misc) and relevant stats: \
+weapons need 'attack', armor needs 'defense'.
 - Give enemies 'hp' and 'attack' stats. Give items and npcs a few short facts.
 - A few durable facts about the location itself.
 
@@ -50,10 +53,11 @@ GENERATE_SEED_SYSTEM = """\
 You seed the opening of a brand-new text RPG from the player's description. \
 Establish a genre, a vivid starting location with 1-3 interactable entities \
 (at least one item, npc, or enemy), the player's name, starting stats (include \
-'hp' and 'attack'), 1-3 starting_items the player carries (weapons, tools, notes \
-— each with type 'item'), and an optional opening quest. Everything must be \
-internally consistent and match the requested tone. All location interactables \
-must appear in starting_location.entities; all carried gear in starting_items."""
+'hp' and 'attack'), 1-3 starting_items the player carries (each type 'item' with \
+slot fact and stats: weapons need attack, armor needs defense), and an optional \
+opening quest. Everything must be internally consistent and match the requested \
+tone. All location interactables must appear in starting_location.entities; all \
+carried gear in starting_items."""
 
 DIALOGUE_SYSTEM = """\
 You generate an NPC's spoken reply for a text RPG.
@@ -62,6 +66,8 @@ CRITICAL RULES:
 - Continue the conversation naturally. Do NOT reset or contradict conversation_history.
 - Stay consistent with the NPC's established facts and anything already said.
 - If the player asks for advice, give concrete advice tied to known quests/facts.
+- You may reference the player's equipped gear and inventory when relevant \
+(see player.loadout in context).
 - Do not invent new major characters or locations not implied by the context.
 - Keep the reply to 1-4 sentences of dialogue (what the NPC says aloud).
 - Put any new durable lore revealed in this exchange into new_facts (short key/value \

@@ -100,6 +100,7 @@ class ActionType(str, Enum):
     talk = "talk"
     attack = "attack"
     inventory = "inventory"
+    equip = "equip"
     use = "use"
     say = "say"
     unknown = "unknown"

@@ -27,6 +27,7 @@ from ..state.models import (
 )
 from ..state.repository import Repository
 from . import consistency
+from .equipment import try_auto_equip
 
 # Compass deltas on the stored coordinate grid. +y is north, +x is east.
 DIRECTION_DELTAS: dict[str, tuple[int, int]] = {
@@ -65,13 +66,22 @@ DIRECTION_NAMES: dict[str, str] = {
 
 def _materialize_starting_item(
     repo: Repository, run_id: str, player_id: str, gen: EntityGen
-) -> None:
+) -> str:
     """Create an item entity and place it directly in the player's inventory."""
     name = consistency.unique_entity_name(repo, run_id, gen.name)
     item = repo.create_entity(run_id, EntityType.item, name)
+    for stat in gen.stats:
+        repo.set_stat(item.id, stat.key, stat.value)
     for fact in gen.facts:
         repo.set_fact(run_id, item.id, fact.key, fact.value)
+    if not repo.get_fact(run_id, item.id, "slot"):
+        slot = "weapon" if any(s.key == "attack" and s.value > 0 for s in gen.stats) else (
+            "armor" if any(s.key == "defense" and s.value > 0 for s in gen.stats) else "misc"
+        )
+        if slot != "misc":
+            repo.set_fact(run_id, item.id, "slot", slot)
     repo.add_to_inventory(player_id, item.id, 1)
+    return item.id
 
 
 def _materialize_entity(
@@ -89,6 +99,12 @@ def _materialize_entity(
         repo.set_stat(entity.id, stat.key, stat.value)
     for fact in gen.facts:
         repo.set_fact(run_id, entity.id, fact.key, fact.value)
+    if gen.type == EntityType.item and not repo.get_fact(run_id, entity.id, "slot"):
+        slot = "weapon" if any(s.key == "attack" and s.value > 0 for s in gen.stats) else (
+            "armor" if any(s.key == "defense" and s.value > 0 for s in gen.stats) else "misc"
+        )
+        if slot != "misc":
+            repo.set_fact(run_id, entity.id, "slot", slot)
 
 
 def _materialize_location(
@@ -150,7 +166,8 @@ def generate_seed(repo: Repository, llm: LLMProvider, run: Run, retries: int) ->
     for item_gen in seed.starting_items:
         if item_gen.type != EntityType.item:
             continue
-        _materialize_starting_item(repo, run.id, player.id, item_gen)
+        item_id = _materialize_starting_item(repo, run.id, player.id, item_gen)
+        try_auto_equip(repo, run.id, player.id, item_id)
 
     if seed.opening_quest:
         repo.create_quest(run.id, title="Opening", summary=seed.opening_quest)

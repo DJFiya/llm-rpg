@@ -61,7 +61,7 @@ def test_combat_is_deterministic_and_persistent(repo, llm, config):
         repo.set_stat(goblin.id, "hp", 8)
         repo.set_stat(goblin.id, "attack", 2)
         rng = GameRNG(777)
-        result = combat.resolve_attack(repo, rng, hero.id, goblin.id)
+        result = combat.resolve_attack(repo, rng, hero.id, goblin.id, run_id=run.id)
         return result.damage_to_defender
 
     first = run_fight()
