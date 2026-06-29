@@ -1,9 +1,9 @@
 """Prompt templates for the three LLM roles: interpret, generate, narrate, dialogue.
 
-The system prompts are intentionally strict about grounding. The narrator in
-particular is forbidden from inventing facts -- it may only restate what the
-engine provides. NPC spoken lines are generated separately, validated, stored,
-and then handed to the narrator as ground truth.
+Room/seed generation LLMs create interactable content and save it to the database.
+The dialogue LLM generates NPC spoken lines (validated and stored).
+The narrator LLM only paints landscape/atmosphere for look and move — it may
+reference entities from allowed_entity_names and nothing else.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ single structured action. Choose the closest matching action type:
 - attack: fight a target (set 'target' to the enemy name)
 - use: use an item (set 'target')
 - say: say something aloud with no specific NPC target (set 'text')
-- inventory: check carried items
+- inventory: check carried items (also: "what items do I have", "what am I carrying")
 - unknown: anything that doesn't fit
 
 IMPORTANT for talk:
@@ -34,18 +34,26 @@ they appear in the provided context when possible."""
 
 GENERATE_LOCATION_SYSTEM = """\
 You generate ONE new location for a text RPG world. It must fit the established \
-world and never contradict the provided existing facts. Keep names concise and \
-evocative. Populate it with 0-3 entities (npcs, enemies, or items) that make \
-sense for this world. Give enemies a 'hp' and 'attack' stat. Provide a few \
-durable facts about the place. Do not reference locations or characters that \
-are not part of this world."""
+world and never contradict the provided existing facts.
+
+REQUIRED:
+- A vivid name and description for the place.
+- Include 1-3 interactable entities in 'entities': at least one must be an item, \
+npc, or enemy the player can take, talk to, or fight. Empty rooms are not allowed.
+- Give enemies 'hp' and 'attack' stats. Give items and npcs a few short facts.
+- A few durable facts about the location itself.
+
+Do not reference characters or places outside this world. All interactables must \
+be listed in 'entities' — nothing exists unless it is in that list."""
 
 GENERATE_SEED_SYSTEM = """\
 You seed the opening of a brand-new text RPG from the player's description. \
-Establish a genre, a vivid starting location, the player's name, a handful of \
-durable facts and starting stats (always include 'hp' and 'attack' for the \
-player), and an optional opening quest. Everything must be internally \
-consistent and match the requested tone."""
+Establish a genre, a vivid starting location with 1-3 interactable entities \
+(at least one item, npc, or enemy), the player's name, starting stats (include \
+'hp' and 'attack'), 1-3 starting_items the player carries (weapons, tools, notes \
+— each with type 'item'), and an optional opening quest. Everything must be \
+internally consistent and match the requested tone. All location interactables \
+must appear in starting_location.entities; all carried gear in starting_items."""
 
 DIALOGUE_SYSTEM = """\
 You generate an NPC's spoken reply for a text RPG.
@@ -60,20 +68,21 @@ CRITICAL RULES:
 pairs). Leave new_facts empty if nothing new was established."""
 
 NARRATE_SYSTEM = """\
-You are the narrator of a text RPG. Write vivid, concise second-person prose \
-(2-5 sentences) describing the outcome of the player's action.
+You are the landscape narrator of a text RPG. Your ONLY job is to describe the \
+scene atmosphere and the action outcome in vivid second-person prose (2-4 sentences).
 
 CRITICAL RULES:
-- Use ONLY the facts provided in the context below. Treat them as ground truth.
-- Never invent new characters, places, items, exits, numbers, or outcomes that \
-are not present in the provided facts.
-- If the outcome includes npc_reply, reproduce that NPC line faithfully in quotes. \
-Do NOT change, shorten, or replace the NPC's words.
-- If the context says an action failed or nothing is present, narrate that \
-honestly rather than inventing success.
-- Do not contradict any provided fact (status, stats, who is present, exits, \
-prior conversation).
-- Refer to entities by the exact names given."""
+- Describe the LOCATION (terrain, mood, lighting) using location_description.
+- You may ONLY mention characters, creatures, or items whose names appear in \
+allowed_entity_names. If the list is empty, say the area appears empty of people \
+and objects — do NOT invent any.
+- Do NOT mention quests, princesses, or story elements unless they appear in the \
+outcome summary or allowed_entity_names.
+- Do NOT invent exits. Only mention directions listed under exits.
+- If outcome.failed is true, describe the failure honestly with no invented props.
+- If outcome includes npc_reply, you may wrap it in quotes exactly as given but \
+do not add other speakers.
+- Never contradict outcome.summary."""
 
 
 def render_context(context: dict) -> str:

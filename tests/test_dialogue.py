@@ -61,31 +61,47 @@ def test_coerce_talk_when_npc_named_in_text():
     assert coerced.target == "Elara"
 
 
-def test_talk_persists_npc_reply(seeded_run, repo: Repository, llm: MockProvider, config: Config):
-    player_id = seeded_run.player_id
-    elara_id = _setup_npc_scene(repo, seeded_run.id, player_id)
-    engine = Engine(repo, llm, seeded_run, config)
+def _minimal_run_with_player(repo: Repository, llm: MockProvider):
+    from llm_rpg.game import new_game
+
+    prompt = "A quiet test realm."
+    run = repo.create_run(world_prompt=prompt, seed=1)
+    new_game.seed_world(repo, llm, run, retries=1)
+    return repo.get_run(run.id)
+
+
+def test_talk_persists_npc_reply(repo: Repository, llm: MockProvider, config: Config):
+    run = _minimal_run_with_player(repo, llm)
+    player_id = run.player_id
+    elara_id = _setup_npc_scene(repo, run.id, player_id)
+    engine = Engine(repo, llm, run, config)
 
     out = engine.take_turn("talk to Elara")
     assert out.action_type == "talk"
     assert "Princess Sofia" in out.summary
 
-    history = repo.conversation_with(seeded_run.id, elara_id)
+    history = repo.conversation_with(run.id, elara_id)
     assert any(h.speaker == "npc" and "Sofia" in h.text for h in history)
 
     follow_up = engine.take_turn("what should I do, Elara?")
     assert follow_up.action_type == "talk"
     assert "the hills" in follow_up.summary.lower()
-    assert len(repo.conversation_with(seeded_run.id, elara_id)) >= 3
+    assert len(repo.conversation_with(run.id, elara_id)) >= 3
 
 
-def test_say_to_lone_npc_becomes_talk(seeded_run, repo: Repository, llm: MockProvider, config: Config):
-    player_id = seeded_run.player_id
-    elara_id = _setup_npc_scene(repo, seeded_run.id, player_id)
-    engine = Engine(repo, llm, seeded_run, config)
+def test_say_to_lone_npc_becomes_talk(repo: Repository, llm: MockProvider, config: Config):
+    run = _minimal_run_with_player(repo, llm)
+    player_id = run.player_id
+    # Remove default Guide so Elara is the only NPC present.
+    loc_id = repo.entity_location(player_id)
+    for ent in repo.entities_at(loc_id, exclude_id=player_id):
+        if ent.type == EntityType.npc:
+            repo.place_entity(run.id, ent.id, None)
+    elara_id = _setup_npc_scene(repo, run.id, player_id)
+    engine = Engine(repo, llm, run, config)
 
     engine.take_turn("talk to Elara")
     out = engine.take_turn("oh no that's terrible")
     assert out.action_type == "talk"
     assert "northern hills" in out.summary.lower()
-    assert len(repo.conversation_with(seeded_run.id, elara_id)) >= 3
+    assert len(repo.conversation_with(run.id, elara_id)) >= 3

@@ -177,6 +177,7 @@ class GameCLI:
         engine = Engine(sess.repo, self.llm, sess.run, self.config)
         self.console.print()
         self._describe_current(engine)
+        self._print_carrying(engine, title="You begin with")
         self.console.print(f"\n[dim]{HELP_TEXT}[/dim]")
 
         while True:
@@ -206,6 +207,7 @@ class GameCLI:
             with self.console.status("..."):
                 output = engine.take_turn(player_text)
             self.console.print(f"\n{output.narration}")
+            self._print_grounded_status(engine)
             if output.player_dead:
                 self.console.print(
                     Panel(
@@ -216,24 +218,77 @@ class GameCLI:
                 return
 
     def _describe_current(self, engine: Engine) -> None:
-        from .engine import memory
-
-        if not engine.run.player_id:
+        lc = engine.grounded_location()
+        if not lc:
             return
-        loc_id = engine.repo.entity_location(engine.run.player_id)
-        if not loc_id:
-            return
-        lc = memory.location_context(engine.repo, engine.run, loc_id)
         body = lc.get("description", "")
         exits = ", ".join(e["direction"] for e in lc.get("exits", [])) or "none yet"
-        present = [e["name"] for e in lc.get("present_entities", [])]
-        who = ("\n[dim]Here: " + ", ".join(present) + "[/dim]") if present else ""
+        present = [
+            f"{e['name']} ({e['type']})" for e in lc.get("present_entities", [])
+        ]
+        who = (
+            ("\n[dim]Here: " + ", ".join(present) + "[/dim]") if present
+            else "\n[dim]Here: nothing interactable[/dim]"
+        )
         self.console.print(
             Panel(
                 f"{body}\n\n[dim]Exits: {exits}[/dim]{who}",
                 title=lc.get("name", "Here"),
                 border_style="blue",
             )
+        )
+
+    def _print_grounded_status(self, engine: Engine) -> None:
+        """Compact bar showing only what the database knows is here."""
+        lc = engine.grounded_location()
+        if not lc:
+            return
+        exits = ", ".join(e["direction"] for e in lc.get("exits", [])) or "none"
+        present = [
+            f"{e['name']} ({e['type']})" for e in lc.get("present_entities", [])
+        ]
+        here = ", ".join(present) if present else "nothing interactable"
+        carrying = self._carrying_label(engine)
+        self.console.print(
+            f"[dim]Ground truth — Exits: {exits} | Here: {here} | Carrying: {carrying}[/dim]"
+        )
+
+    def _carrying_label(self, engine: Engine) -> str:
+        if not engine.run.player_id:
+            return "nothing"
+        items = engine.repo.inventory(engine.run.player_id)
+        if not items:
+            return "nothing"
+        return ", ".join(
+            f"{item.name}" + (f" x{qty}" if qty > 1 else "") for item, qty in items
+        )
+
+    def _print_carrying(self, engine: Engine, *, title: str = "Inventory") -> None:
+        if not engine.run.player_id:
+            return
+        items = engine.repo.inventory(engine.run.player_id)
+        hp = engine.repo.get_stat(engine.run.player_id, "hp")
+        atk = engine.repo.get_stat(engine.run.player_id, "attack")
+        if not items and hp is None:
+            return
+        lines = []
+        if items:
+            lines.append(
+                "Carrying: "
+                + ", ".join(
+                    f"{item.name}" + (f" x{qty}" if qty > 1 else "")
+                    for item, qty in items
+                )
+            )
+        else:
+            lines.append("Carrying: nothing")
+        if hp is not None:
+            stat = f"HP: {int(hp)}"
+            if atk is not None:
+                stat += f" | Attack: {int(atk)}"
+            lines.append(stat)
+        self.console.print(
+            Panel("\n".join(lines), title=title, border_style="yellow")
         )
 
     def _show_map(self, sess: session.Session) -> None:

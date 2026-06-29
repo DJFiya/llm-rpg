@@ -100,6 +100,8 @@ class MockProvider(LLMProvider):
             action = {"type": "look", "target": rest or None}
         elif verb in {"inventory", "inv", "i", "items"}:
             action = {"type": "inventory"}
+        elif "what items" in text or "what do i have" in text or "what am i carrying" in text:
+            action = {"type": "inventory"}
         elif verb in {"go", "move", "walk", "head", "travel"} or verb in _DIRECTION_WORDS:
             direction = None
             for tok in tokens:
@@ -136,9 +138,15 @@ class MockProvider(LLMProvider):
             "facts": [
                 {"key": "mood", "value": self._pick(h + "d", _DESCRIPTOR_WORDS).lower()}
             ],
-            "entities": [],
+            "entities": [
+                {
+                    "type": "item",
+                    "name": f"Worn {self._pick(h + 'i', ['Token', 'Charm', 'Key'])}",
+                    "facts": [{"key": "condition", "value": "weathered"}],
+                    "stats": [],
+                },
+            ],
         }
-        # Roughly half the time, add a creature with combat stats.
         if self._hash_int(user + "spawn") % 2 == 0:
             payload["entities"].append(
                 {
@@ -146,6 +154,15 @@ class MockProvider(LLMProvider):
                     "name": f"{self._pick(h + 'e', _ENTITY_WORDS)} of {name}",
                     "facts": [{"key": "demeanor", "value": "wary"}],
                     "stats": [{"key": "hp", "value": 10.0}, {"key": "attack", "value": 3.0}],
+                }
+            )
+        else:
+            payload["entities"].append(
+                {
+                    "type": "npc",
+                    "name": self._pick(h + "n", _ENTITY_WORDS),
+                    "facts": [{"key": "role", "value": "wanderer"}],
+                    "stats": [],
                 }
             )
         return json.dumps(payload)
@@ -195,13 +212,34 @@ class MockProvider(LLMProvider):
                     "around your first steps."
                 ),
                 "facts": [{"key": "role", "value": "starting point"}],
-                "entities": [],
+                "entities": [
+                    {
+                        "type": "npc",
+                        "name": "Guide",
+                        "facts": [{"key": "role", "value": "helpful stranger"}],
+                        "stats": [],
+                    },
+                    {
+                        "type": "item",
+                        "name": "Traveler's Note",
+                        "facts": [{"key": "contents", "value": "a vague map sketch"}],
+                        "stats": [],
+                    },
+                ],
             },
             "player_name": "Traveler",
             "player_facts": [{"key": "origin", "value": "unknown"}],
             "player_stats": [
                 {"key": "hp", "value": 20.0},
                 {"key": "attack", "value": 5.0},
+            ],
+            "starting_items": [
+                {
+                    "type": "item",
+                    "name": "Traveler's Blade",
+                    "facts": [{"key": "condition", "value": "well-worn"}],
+                    "stats": [],
+                },
             ],
             "opening_quest": "Discover what lies beyond the first horizon.",
         }

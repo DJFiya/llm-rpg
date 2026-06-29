@@ -160,6 +160,10 @@ class SeedGen(BaseModel):
     player_name: str
     player_facts: list[FactGen] = Field(default_factory=list)
     player_stats: list[StatGen] = Field(default_factory=list)
+    starting_items: list[EntityGen] = Field(
+        default_factory=list,
+        description="Items the player begins with (type must be item).",
+    )
     opening_quest: str | None = None
 
 

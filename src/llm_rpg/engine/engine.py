@@ -20,6 +20,7 @@ from ..state.models import Action, ActionType, Run
 from ..state.repository import Repository
 from . import memory
 from .actions import HANDLERS, ActionResult, TurnContext
+from .narration import build_narrate_context, should_use_llm_narration
 
 
 @dataclass
@@ -58,6 +59,36 @@ def coerce_conversation_action(
     if len(npcs) == 1:
         return Action(type=ActionType.talk, target=npcs[0]["name"], text=text)
 
+    # Multiple NPCs: continue with whoever the player was just speaking to.
+    for npc in npcs:
+        if npc.get("conversation"):
+            return Action(type=ActionType.talk, target=npc["name"], text=text)
+
+    return action
+
+
+_INVENTORY_PHRASES = (
+    "what items",
+    "what do i have",
+    "what do i carry",
+    "what am i carrying",
+    "my items",
+    "my inventory",
+    "show inventory",
+    "check inventory",
+    "do i have anything",
+)
+
+
+def coerce_inventory_action(
+    action: Action, player_text: str = ""
+) -> Action:
+    """Route natural inventory questions to the inventory handler."""
+    if action.type == ActionType.inventory:
+        return action
+    text = player_text.strip().lower()
+    if text and any(phrase in text for phrase in _INVENTORY_PHRASES):
+        return Action(type=ActionType.inventory)
     return action
 
 
@@ -94,15 +125,22 @@ class Engine:
             )
         except LLMError:
             action = Action(type=ActionType.unknown, text=player_text)
-        return coerce_conversation_action(action, context, player_text)
+        return coerce_inventory_action(
+            coerce_conversation_action(action, context, player_text),
+            player_text,
+        )
 
     # --- Phase 3: narrate -----------------------------------------------------
     def narrate(self, result: ActionResult, context: dict) -> str:
+        if not should_use_llm_narration(result):
+            return result.summary
+
+        narrate_ctx = build_narrate_context(context, result)
         result_payload = dataclasses.asdict(result)
         user = (
-            "Context (ground truth facts):\n"
-            f"{json.dumps(context, ensure_ascii=False)}\n\n"
-            "Outcome to narrate (do not change these facts):\n"
+            "Ground truth (use ONLY these facts):\n"
+            f"{json.dumps(narrate_ctx, ensure_ascii=False)}\n\n"
+            "Full outcome (do not change):\n"
             f"{json.dumps(result_payload, ensure_ascii=False)}"
         )
         try:
@@ -110,6 +148,15 @@ class Engine:
         except LLMError:
             text = ""
         return text or result.summary
+
+    def grounded_location(self) -> dict | None:
+        """Current location facts for the status bar (always from the database)."""
+        if not self.run.player_id:
+            return None
+        loc_id = self.repo.entity_location(self.run.player_id)
+        if not loc_id:
+            return None
+        return memory.location_context(self.repo, self.run, loc_id)
 
     # --- Full turn ------------------------------------------------------------
     def take_turn(self, player_text: str) -> TurnOutput:
@@ -146,7 +193,10 @@ class Engine:
         )
         self.repo.commit()
 
-        narration = self.narrate(result, context)
+        post_context = memory.build_context(
+            self.repo, self.run, self.config.memory_window
+        )
+        narration = self.narrate(result, post_context)
         player_dead = bool(result.details.get("player_dead"))
         return TurnOutput(
             action_type=result.action_type,

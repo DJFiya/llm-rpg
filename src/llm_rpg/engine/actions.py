@@ -209,6 +209,8 @@ def handle_attack(ctx: TurnContext, action: Action) -> ActionResult:
         )
     if result.attacker_dead:
         parts.append("The blow is fatal -- you collapse.")
+    else:
+        parts.append(f"You have {int(result.attacker_hp)} HP remaining.")
     summary = " ".join(parts)
     return ActionResult(
         "attack",
@@ -227,14 +229,33 @@ def handle_attack(ctx: TurnContext, action: Action) -> ActionResult:
 
 def handle_inventory(ctx: TurnContext, action: Action) -> ActionResult:
     if not ctx.run.player_id:
-        return ActionResult("inventory", "You carry nothing.")
-    items = ctx.repo.inventory(ctx.run.player_id)
-    if not items:
         return ActionResult("inventory", "You are carrying nothing.")
+    items = ctx.repo.inventory(ctx.run.player_id)
+    hp = ctx.repo.get_stat(ctx.run.player_id, "hp")
+    atk = ctx.repo.get_stat(ctx.run.player_id, "attack")
+    stats_note = ""
+    if hp is not None:
+        stats_note = f" HP: {int(hp)}."
+        if atk is not None:
+            stats_note = f" HP: {int(hp)}, Attack: {int(atk)}."
+    if not items:
+        return ActionResult(
+            "inventory",
+            f"You are carrying nothing.{stats_note}",
+            {"items": [], "player_hp": hp, "player_attack": atk},
+        )
     listing = ", ".join(
         f"{item.name}" + (f" x{qty}" if qty > 1 else "") for item, qty in items
     )
-    return ActionResult("inventory", f"You are carrying: {listing}.")
+    return ActionResult(
+        "inventory",
+        f"You are carrying: {listing}.{stats_note}",
+        {
+            "items": [{"name": item.name, "qty": qty} for item, qty in items],
+            "player_hp": hp,
+            "player_attack": atk,
+        },
+    )
 
 
 def handle_use(ctx: TurnContext, action: Action) -> ActionResult:

@@ -63,6 +63,17 @@ DIRECTION_NAMES: dict[str, str] = {
 }
 
 
+def _materialize_starting_item(
+    repo: Repository, run_id: str, player_id: str, gen: EntityGen
+) -> None:
+    """Create an item entity and place it directly in the player's inventory."""
+    name = consistency.unique_entity_name(repo, run_id, gen.name)
+    item = repo.create_entity(run_id, EntityType.item, name)
+    for fact in gen.facts:
+        repo.set_fact(run_id, item.id, fact.key, fact.value)
+    repo.add_to_inventory(player_id, item.id, 1)
+
+
 def _materialize_entity(
     repo: Repository, run_id: str, location_id: str | None, gen: EntityGen
 ) -> None:
@@ -135,6 +146,11 @@ def generate_seed(repo: Repository, llm: LLMProvider, run: Run, retries: int) ->
         repo.set_stat(player.id, "hp", 20.0)
     if repo.get_stat(player.id, "attack") is None:
         repo.set_stat(player.id, "attack", 5.0)
+
+    for item_gen in seed.starting_items:
+        if item_gen.type != EntityType.item:
+            continue
+        _materialize_starting_item(repo, run.id, player.id, item_gen)
 
     if seed.opening_quest:
         repo.create_quest(run.id, title="Opening", summary=seed.opening_quest)
