@@ -85,6 +85,9 @@ CRITICAL RULES:
 pairs). Leave new_facts empty if nothing new was established.
 - When the NPC actually gives the player items or gold THIS turn, list them in \
 grant_items (with qty) and/or grant_gold. Leave both empty if nothing is handed over.
+- ONLY populate grant_items/grant_gold when the npc_reply clearly transfers goods \
+(use phrases like "take this", "here is", "I give you"). Commentary or questions \
+about items must leave grants empty.
 - ONLY grant rewards the player has earned (e.g. defeated_enemies must include the \
 foe they beat before paying for that kill). Match quantities to what the NPC says.
 - For stackable goods (gold, potions), set qty accordingly. Gold uses grant_gold."""

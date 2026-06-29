@@ -21,6 +21,7 @@ from ..state.models import Action, ActionType, Run
 from ..state.repository import Repository
 from . import memory
 from .actions import HANDLERS, ActionResult, TurnContext
+from .matching import best_fuzzy_match, extract_name_hint
 from .narration import build_narrate_context, should_use_llm_narration
 
 _QUESTION_MARKERS = (
@@ -118,17 +119,34 @@ def coerce_conversation_action(
     action: Action, context: dict, player_text: str = ""
 ) -> Action:
     """Route free-form speech at a present NPC to talk instead of say/unknown."""
-    if action.type not in {ActionType.say, ActionType.unknown}:
-        return action
     text = (action.text or action.target or player_text or "").strip()
-    if not text:
-        return action
-
     location = context.get("location") or {}
     npcs = [
         e for e in location.get("present_entities", []) if e.get("type") == "npc"
     ]
     if not npcs:
+        return action
+    names = [npc["name"] for npc in npcs]
+
+    if action.type == ActionType.talk:
+        target = action.target or ""
+        utterance = (action.text or player_text or "").strip()
+        if target not in names:
+            matched = best_fuzzy_match(
+                extract_name_hint(utterance) or target or utterance, names
+            )
+            if matched:
+                spoken = (action.text or player_text or "").strip() or None
+                return Action(
+                    type=ActionType.talk,
+                    target=matched,
+                    text=spoken,
+                )
+        return action
+
+    if action.type not in {ActionType.say, ActionType.unknown}:
+        return action
+    if not text:
         return action
 
     text_l = text.lower()
@@ -138,6 +156,10 @@ def coerce_conversation_action(
         first = name.split()[0].lower()
         if name_l in text_l or (len(first) > 2 and first in text_l):
             return Action(type=ActionType.talk, target=name, text=text)
+
+    matched = best_fuzzy_match(extract_name_hint(text) or text, names)
+    if matched:
+        return Action(type=ActionType.talk, target=matched, text=text)
 
     if len(npcs) == 1:
         return Action(type=ActionType.talk, target=npcs[0]["name"], text=text)

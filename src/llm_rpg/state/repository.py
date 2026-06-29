@@ -316,6 +316,20 @@ class Repository:
             result.append((Entity.model_validate(data), qty))
         return result
 
+    def inventory_holder(self, item_id: str) -> str | None:
+        row = self.conn.execute(
+            "SELECT owner_id FROM inventory WHERE item_id = ? LIMIT 1",
+            (item_id,),
+        ).fetchone()
+        return row["owner_id"] if row else None
+
+    def inventory_qty(self, owner_id: str, item_id: str) -> int:
+        row = self.conn.execute(
+            "SELECT qty FROM inventory WHERE owner_id = ? AND item_id = ?",
+            (owner_id, item_id),
+        ).fetchone()
+        return int(row["qty"]) if row else 0
+
     # --- Equipment ------------------------------------------------------------
     def equip(self, owner_id: str, slot: str, item_id: str) -> None:
         self.conn.execute(

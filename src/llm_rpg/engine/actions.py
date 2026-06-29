@@ -24,6 +24,7 @@ from .equipment import (
     player_loadout,
     try_auto_equip,
 )
+from .matching import best_fuzzy_match, extract_name_hint
 from .rewards import spawn_enemy_drops
 
 
@@ -52,9 +53,11 @@ def _player_location(ctx: TurnContext) -> str | None:
 
 
 def _find_present_entity(
-    ctx: TurnContext, location_id: str, target: str
+    ctx: TurnContext, location_id: str, target: str, *, player_text: str = ""
 ) -> Entity | None:
     """Resolve a possibly-fuzzy target name to a present entity."""
+    if not target and player_text:
+        target = extract_name_hint(player_text) or ""
     if not target:
         return None
     target_l = target.strip().lower()
@@ -66,6 +69,11 @@ def _find_present_entity(
         name_l = entity.name.lower()
         if target_l in name_l or name_l in target_l:
             return entity
+    fuzzy = best_fuzzy_match(target, [entity.name for entity in present])
+    if fuzzy:
+        for entity in present:
+            if entity.name == fuzzy:
+                return entity
     return None
 
 
@@ -141,17 +149,35 @@ def handle_take(ctx: TurnContext, action: Action) -> ActionResult:
     return ActionResult("take", msg, {"item": entity.name, "equipped_slot": slot})
 
 
+def _normalize_player_said(action: Action) -> str | None:
+    """Drop bare 'talk to X' invocations; keep actual spoken lines."""
+    text = (action.text or "").strip()
+    if not text:
+        return None
+    lower = text.lower()
+    for prefix in ("talk to ", "talk with ", "speak to ", "ask "):
+        if lower.startswith(prefix):
+            remainder = text[len(prefix) :].strip()
+            target_first = (action.target or "").lower().split()[0]
+            remainder_first = remainder.lower().split()[0] if remainder else ""
+            if not remainder or remainder_first == target_first:
+                return None
+    return text
+
+
 def handle_talk(ctx: TurnContext, action: Action) -> ActionResult:
     location_id = _player_location(ctx)
     if not location_id:
         return ActionResult("talk", "There is no one to talk to.")
-    entity = _find_present_entity(ctx, location_id, action.target or "")
+    entity = _find_present_entity(
+        ctx, location_id, action.target or "", player_text=action.text or ""
+    )
     if entity is None or entity.type not in {EntityType.npc, EntityType.enemy}:
         target = action.target or "anyone"
         return ActionResult(
             "talk", f"There is no {target} here to talk to.", {"failed": True}
         )
-    player_said = (action.text or "").strip() or None
+    player_said = _normalize_player_said(action)
     reply = generate_npc_reply(
         ctx.repo,
         ctx.llm,
@@ -221,7 +247,9 @@ def handle_attack(ctx: TurnContext, action: Action) -> ActionResult:
         return ActionResult("attack", str(exc), {"failed": True})
     drops: list[str] = []
     if result.defender_dead and location_id:
-        drops = spawn_enemy_drops(ctx.repo, ctx.run.id, location_id, entity)
+        drops = spawn_enemy_drops(
+            ctx.repo, ctx.run.id, location_id, entity, player_id=ctx.run.player_id
+        )
     ctx.repo.commit()
 
     weapon = get_equipped(ctx.repo, ctx.run.id, ctx.run.player_id, "weapon")

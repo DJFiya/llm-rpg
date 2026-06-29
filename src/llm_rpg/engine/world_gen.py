@@ -67,44 +67,32 @@ DIRECTION_NAMES: dict[str, str] = {
 def _materialize_starting_item(
     repo: Repository, run_id: str, player_id: str, gen: EntityGen
 ) -> str:
-    """Create an item entity and place it directly in the player's inventory."""
-    name = consistency.unique_entity_name(repo, run_id, gen.name)
-    item = repo.create_entity(run_id, EntityType.item, name)
-    for stat in gen.stats:
-        repo.set_stat(item.id, stat.key, stat.value)
-    for fact in gen.facts:
-        repo.set_fact(run_id, item.id, fact.key, fact.value)
-    if not repo.get_fact(run_id, item.id, "slot"):
-        slot = "weapon" if any(s.key == "attack" and s.value > 0 for s in gen.stats) else (
-            "armor" if any(s.key == "defense" and s.value > 0 for s in gen.stats) else "misc"
-        )
-        if slot != "misc":
-            repo.set_fact(run_id, item.id, "slot", slot)
-    repo.add_to_inventory(player_id, item.id, 1)
+    """Create or reuse an item entity and place it in the player's inventory."""
+    from .items import add_item_to_inventory
+
+    item, _total = add_item_to_inventory(repo, run_id, player_id, gen, qty=1)
     return item.id
 
 
 def _materialize_entity(
     repo: Repository, run_id: str, location_id: str | None, gen: EntityGen
 ) -> None:
+    if gen.type == EntityType.item:
+        from .items import place_item_at_location, resolve_or_create_item
+
+        item, _created = resolve_or_create_item(repo, run_id, gen)
+        if location_id is not None:
+            place_item_at_location(repo, run_id, location_id, gen)
+        return
+
     name = consistency.unique_entity_name(repo, run_id, gen.name)
     entity = repo.create_entity(run_id, gen.type, name)
-    if location_id is not None and gen.type in {
-        EntityType.npc,
-        EntityType.enemy,
-        EntityType.item,
-    }:
+    if location_id is not None and gen.type in {EntityType.npc, EntityType.enemy}:
         repo.place_entity(run_id, entity.id, location_id)
     for stat in gen.stats:
         repo.set_stat(entity.id, stat.key, stat.value)
     for fact in gen.facts:
         repo.set_fact(run_id, entity.id, fact.key, fact.value)
-    if gen.type == EntityType.item and not repo.get_fact(run_id, entity.id, "slot"):
-        slot = "weapon" if any(s.key == "attack" and s.value > 0 for s in gen.stats) else (
-            "armor" if any(s.key == "defense" and s.value > 0 for s in gen.stats) else "misc"
-        )
-        if slot != "misc":
-            repo.set_fact(run_id, entity.id, "slot", slot)
 
 
 def _materialize_location(
