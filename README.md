@@ -176,6 +176,18 @@ consistency checks, JSON validation/repair, and a full offline turn flow
 - **Richer world**: the `facts`, `stats`, `relationships`, and `quests` tables
   are generic and ready to back deeper systems.
 
+## Changelog
+
+### 0.2.0
+
+- **Item catalog** — seed LLM defines canonical items with numeric stats; world gen and grants reuse them.
+- **Consumables** — `use healing potion` applies `heal_hp` from the catalog and consumes a charge.
+- **Dialogue grants** — NPC handoffs materialize into inventory; gold parsed correctly; prose cannot become fake items.
+- **Kill rewards** — bounty payouts require the foe to actually be dead in the database.
+- **Combat intent** — lines like “finish the golem” or “swing at” route to attack, not NPC chat.
+- **Talk routing** — fuzzy NPC names, “turn to X and ask”, and follow-ups go to the right partner; enemies cannot gift loot in dialogue.
+- **Items & combat** — one entity row per item name (stack via qty); dead enemies leave the room and can drop catalog loot.
+
 ## Not in v1 (designed for later)
 
 - A graphical/web map UI - location coordinates are already stored so it can be
