@@ -115,7 +115,20 @@ CREATE TABLE IF NOT EXISTS action_log (
     created_at  TEXT NOT NULL
 );
 
+-- Append-only dialogue between the player and an NPC. This is the source of
+-- truth for what was said; the narrator may not invent or change NPC lines.
+CREATE TABLE IF NOT EXISTS conversation_log (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id     TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+    entity_id  TEXT NOT NULL REFERENCES entities(id) ON DELETE CASCADE,
+    turn       INTEGER NOT NULL,
+    speaker    TEXT NOT NULL,
+    text       TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_entity_location_loc ON entity_location(location_id);
 CREATE INDEX IF NOT EXISTS idx_facts_subject ON facts(run_id, subject_id);
 CREATE INDEX IF NOT EXISTS idx_action_log_run ON action_log(run_id, turn);
 CREATE INDEX IF NOT EXISTS idx_connections_from ON connections(run_id, from_location);
+CREATE INDEX IF NOT EXISTS idx_conversation_entity ON conversation_log(run_id, entity_id, id);

@@ -17,6 +17,7 @@ from ..state.models import Action, Entity, EntityType, Run
 from ..state.repository import Repository
 from . import combat, world_gen
 from .consistency import ConsistencyError
+from .dialogue import generate_npc_reply, persist_dialogue
 
 
 @dataclass
@@ -26,6 +27,8 @@ class TurnContext:
     run: Run
     rng: GameRNG
     retries: int = 2
+    turn: int = 0
+    world_context: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -137,15 +140,38 @@ def handle_talk(ctx: TurnContext, action: Action) -> ActionResult:
         return ActionResult(
             "talk", f"There is no {target} here to talk to.", {"failed": True}
         )
-    facts = {f.key: f.value for f in ctx.repo.facts_for(ctx.run.id, entity.id)}
-    said = action.text or ""
-    summary = f"You speak with {entity.name}."
-    if said:
-        summary = f"You say to {entity.name}: '{said}'."
+    player_said = (action.text or "").strip() or None
+    reply = generate_npc_reply(
+        ctx.repo,
+        ctx.llm,
+        ctx.run,
+        entity,
+        player_said,
+        turn=ctx.turn,
+        world_context=ctx.world_context,
+        retries=ctx.retries,
+    )
+    persist_dialogue(
+        ctx.repo, ctx.run.id, entity.id, ctx.turn, player_said, reply
+    )
+    ctx.repo.commit()
+
+    if player_said:
+        summary = (
+            f"You say to {entity.name}: '{player_said}'. "
+            f"{entity.name} replies: '{reply.npc_reply}'"
+        )
+    else:
+        summary = f"{entity.name} replies: '{reply.npc_reply}'"
     return ActionResult(
         "talk",
         summary,
-        {"npc": entity.name, "npc_facts": facts, "player_said": said},
+        {
+            "npc": entity.name,
+            "player_said": player_said or "",
+            "npc_reply": reply.npc_reply,
+            "new_facts": {f.key: f.value for f in reply.new_facts},
+        },
     )
 
 

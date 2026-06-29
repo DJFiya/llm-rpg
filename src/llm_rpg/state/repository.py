@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from .models import (
     ActionLogEntry,
     Connection,
+    ConversationEntry,
     Entity,
     EntityType,
     Fact,
@@ -362,4 +363,36 @@ class Repository:
         ).fetchall()
         entries = [ActionLogEntry.model_validate(dict(r)) for r in rows]
         entries.reverse()  # chronological order
+        return entries
+
+    # --- Conversation log -----------------------------------------------------
+    def log_conversation(
+        self,
+        run_id: str,
+        entity_id: str,
+        turn: int,
+        speaker: str,
+        text: str,
+    ) -> None:
+        self.conn.execute(
+            """INSERT INTO conversation_log
+               (run_id, entity_id, turn, speaker, text, created_at)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (run_id, entity_id, turn, speaker, text, _now()),
+        )
+
+    def conversation_with(
+        self, run_id: str, entity_id: str, limit: int = 20
+    ) -> list[ConversationEntry]:
+        rows = self.conn.execute(
+            """SELECT turn, speaker, text FROM conversation_log
+               WHERE run_id = ? AND entity_id = ?
+               ORDER BY id DESC LIMIT ?""",
+            (run_id, entity_id, limit),
+        ).fetchall()
+        entries = [
+            ConversationEntry(turn=r["turn"], speaker=r["speaker"], text=r["text"])
+            for r in rows
+        ]
+        entries.reverse()
         return entries

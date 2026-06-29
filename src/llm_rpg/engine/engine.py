@@ -30,6 +30,37 @@ class TurnOutput:
     player_dead: bool = False
 
 
+def coerce_conversation_action(
+    action: Action, context: dict, player_text: str = ""
+) -> Action:
+    """Route free-form speech at a present NPC to talk instead of say/unknown."""
+    if action.type not in {ActionType.say, ActionType.unknown}:
+        return action
+    text = (action.text or action.target or player_text or "").strip()
+    if not text:
+        return action
+
+    location = context.get("location") or {}
+    npcs = [
+        e for e in location.get("present_entities", []) if e.get("type") == "npc"
+    ]
+    if not npcs:
+        return action
+
+    text_l = text.lower()
+    for npc in npcs:
+        name = npc["name"]
+        name_l = name.lower()
+        first = name.split()[0].lower()
+        if name_l in text_l or (len(first) > 2 and first in text_l):
+            return Action(type=ActionType.talk, target=name, text=text)
+
+    if len(npcs) == 1:
+        return Action(type=ActionType.talk, target=npcs[0]["name"], text=text)
+
+    return action
+
+
 class Engine:
     def __init__(
         self,
@@ -55,14 +86,15 @@ class Engine:
             f"{json.dumps(context, ensure_ascii=False)}"
         )
         try:
-            return self.llm.generate_json(
+            action = self.llm.generate_json(
                 INTERPRET_SYSTEM,
                 user,
                 Action,
                 retries=self.config.json_repair_retries,
             )
         except LLMError:
-            return Action(type=ActionType.unknown, text=player_text)
+            action = Action(type=ActionType.unknown, text=player_text)
+        return coerce_conversation_action(action, context, player_text)
 
     # --- Phase 3: narrate -----------------------------------------------------
     def narrate(self, result: ActionResult, context: dict) -> str:
@@ -85,12 +117,15 @@ class Engine:
         action = self.interpret(player_text, context)
 
         handler = HANDLERS.get(action.type.value, HANDLERS["unknown"])
+        next_turn = self.run.turn + 1
         ctx = TurnContext(
             repo=self.repo,
             llm=self.llm,
             run=self.run,
             rng=self.rng,
             retries=self.config.json_repair_retries,
+            turn=next_turn,
+            world_context=context,
         )
         result = handler(ctx, action)
 

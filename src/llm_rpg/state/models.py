@@ -85,6 +85,12 @@ class ActionLogEntry(BaseModel):
     created_at: str
 
 
+class ConversationEntry(BaseModel):
+    turn: int
+    speaker: str
+    text: str
+
+
 # --- LLM structured outputs ---------------------------------------------------
 
 class ActionType(str, Enum):
@@ -155,3 +161,13 @@ class SeedGen(BaseModel):
     player_facts: list[FactGen] = Field(default_factory=list)
     player_stats: list[StatGen] = Field(default_factory=list)
     opening_quest: str | None = None
+
+
+class DialogueGen(BaseModel):
+    """An NPC's spoken reply, validated before it becomes ground truth."""
+
+    npc_reply: str
+    new_facts: list[FactGen] = Field(
+        default_factory=list,
+        description="Optional durable facts revealed in this exchange.",
+    )

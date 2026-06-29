@@ -3,12 +3,12 @@
 This is what makes the game "remember": instead of relying on the model's
 context window, every turn we query the database for exactly the facts relevant
 right now (current location, who's present, the player's state, recent events,
-active quests). The narrator is then constrained to only these facts.
+active quests, and conversation history with NPCs).
 """
 
 from __future__ import annotations
 
-from ..state.models import Run
+from ..state.models import EntityType, Run
 from ..state.repository import Repository
 from .world_gen import DIRECTION_NAMES
 
@@ -31,15 +31,24 @@ def location_context(repo: Repository, run: Run, location_id: str) -> dict:
     if location is None:
         return {}
     player_id = run.player_id
-    present = [
-        {
+    present = []
+    for e in repo.entities_at(location_id, exclude_id=player_id):
+        entry = {
             "name": e.name,
             "type": e.type.value,
             "status": e.status,
             "stats": repo.get_stats(e.id),
         }
-        for e in repo.entities_at(location_id, exclude_id=player_id)
-    ]
+        if e.type in {EntityType.npc, EntityType.enemy}:
+            entry["facts"] = {
+                f.key: f.value for f in repo.facts_for(run.id, e.id)
+            }
+            history = repo.conversation_with(run.id, e.id, limit=8)
+            if history:
+                entry["conversation"] = [
+                    {"speaker": h.speaker, "text": h.text} for h in history
+                ]
+        present.append(entry)
     exits = [
         {
             "direction": DIRECTION_NAMES.get(c.direction, c.direction),

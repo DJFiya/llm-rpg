@@ -69,6 +69,8 @@ class MockProvider(LLMProvider):
             return self._seed(user)
         if "generate ONE new location" in system:
             return self._location(user)
+        if "generate an NPC's spoken reply" in system:
+            return self._dialogue(user)
         # Default: narration (prose, not JSON).
         return self._narrate(user)
 
@@ -147,6 +149,38 @@ class MockProvider(LLMProvider):
                 }
             )
         return json.dumps(payload)
+
+    def _dialogue(self, user: str) -> str:
+        player_says = ""
+        match = re.search(r'"player_says":\s*"((?:[^"\\]|\\.)*)"', user)
+        if match:
+            player_says = match.group(1).replace('\\"', '"')
+        history_len = len(re.findall(r'"speaker":\s*"', user))
+        player_l = player_says.lower()
+
+        if not player_says and history_len == 0:
+            reply = (
+                "Welcome, traveler. Princess Sofia was taken to the northern hills. "
+                "We need your help."
+            )
+            facts = [{"key": "quest_hook", "value": "Princess Sofia taken north"}]
+        elif "what should" in player_l or "what do" in player_l:
+            reply = (
+                "Go north to the hills and search for Sofia. "
+                "Take the old forest path and stay wary of strangers."
+            )
+            facts = []
+        elif "terrible" in player_l or "oh no" in player_l:
+            reply = (
+                "I know it is awful, but we cannot delay. "
+                "The northern hills are our best lead."
+            )
+            facts = []
+        else:
+            reply = "I hear you. Focus on the northern hills — that is where we must go."
+            facts = []
+
+        return json.dumps({"npc_reply": reply, "new_facts": facts})
 
     def _seed(self, user: str) -> str:
         h = str(self._hash_int(user))
