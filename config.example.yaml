@@ -1,0 +1,41 @@
+# Copy this file to config.yaml and edit as needed.
+# The game looks for config.yaml in the working directory, then falls back to
+# this example, then to built-in defaults.
+
+# Which LLM backend to use: "mock" | "openai" | "anthropic" | "ollama"
+# "mock" requires no API key and plays fully offline (deterministic). Great for
+# trying the engine out or running tests.
+provider: mock
+
+# Per-provider settings. Only the selected provider's block is used.
+providers:
+  openai:
+    model: gpt-4o-mini
+    # API key is read from the OPENAI_API_KEY environment variable by default.
+    # You may set it here instead, but environment variables are preferred.
+    api_key: null
+    temperature: 0.8
+
+  anthropic:
+    model: claude-3-5-sonnet-latest
+    api_key: null   # falls back to ANTHROPIC_API_KEY
+    temperature: 0.8
+    max_tokens: 1024
+
+  ollama:
+    model: llama3.1
+    host: http://localhost:11434
+    temperature: 0.8
+
+  mock:
+    # No options needed.
+    {}
+
+# Where save databases live (one .db file per run).
+saves_dir: saves
+
+# How many recent action-log entries to feed back as short-term memory.
+memory_window: 12
+
+# Number of repair retries when an LLM returns invalid/unparseable JSON.
+json_repair_retries: 2
