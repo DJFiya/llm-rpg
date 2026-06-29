@@ -240,15 +240,19 @@ class Repository:
         ).fetchall()
         return [Entity.model_validate(dict(r)) for r in rows]
 
-    def recent_conversation_npc_name(self, run_id: str) -> str | None:
+    def recent_conversation_partner_name(self, run_id: str) -> str | None:
         row = self.conn.execute(
             """SELECT e.name FROM conversation_log cl
                JOIN entities e ON e.id = cl.entity_id
-               WHERE cl.run_id = ? AND e.type = 'npc'
+               WHERE cl.run_id = ? AND e.type IN ('npc', 'enemy')
                ORDER BY cl.id DESC LIMIT 1""",
             (run_id,),
         ).fetchone()
         return row["name"] if row else None
+
+    def recent_conversation_npc_name(self, run_id: str) -> str | None:
+        """Alias for interaction focus (NPCs and enemies)."""
+        return self.recent_conversation_partner_name(run_id)
 
     # --- Entity location ------------------------------------------------------
     def place_entity(
@@ -315,6 +319,15 @@ class Repository:
             qty = int(data.pop("qty"))
             result.append((Entity.model_validate(data), qty))
         return result
+
+    def set_inventory_qty(self, owner_id: str, item_id: str, qty: int) -> None:
+        if qty <= 0:
+            self.remove_from_inventory(owner_id, item_id)
+            return
+        self.conn.execute(
+            "UPDATE inventory SET qty = ? WHERE owner_id = ? AND item_id = ?",
+            (qty, owner_id, item_id),
+        )
 
     def inventory_holder(self, item_id: str) -> str | None:
         row = self.conn.execute(

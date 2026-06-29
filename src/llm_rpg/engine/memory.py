@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from ..state.models import EntityType, Run
 from ..state.repository import Repository
+from .catalog import catalog_context
 from .equipment import item_slot, player_loadout
 from .world_gen import DIRECTION_NAMES
 
@@ -105,9 +106,10 @@ def build_context(repo: Repository, run: Run, memory_window: int) -> dict:
     recent = repo.recent_actions(run.id, 1)
     last = recent[-1] if recent else None
     context["interaction"] = {
-        "focus_npc": repo.recent_conversation_npc_name(run.id),
+        "focus_npc": repo.recent_conversation_partner_name(run.id),
         "last_action": last.action_type if last else None,
         "last_outcome": last.outcome if last else "",
         "defeated_enemies": [e.name for e in repo.defeated_enemies(run.id)],
     }
+    context["item_catalog"] = catalog_context(repo, run.id)
     return context

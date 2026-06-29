@@ -21,7 +21,11 @@ from ..state.models import Action, ActionType, Run
 from ..state.repository import Repository
 from . import memory
 from .actions import HANDLERS, ActionResult, TurnContext
-from .matching import best_fuzzy_match, extract_name_hint
+from .matching import (
+    best_fuzzy_match,
+    extract_name_hint,
+    extract_turn_to_target,
+)
 from .narration import build_narrate_context, should_use_llm_narration
 
 _QUESTION_MARKERS = (
@@ -115,26 +119,38 @@ class TurnOutput:
     player_dead: bool = False
 
 
+def _conversable_entities(location: dict) -> list[dict]:
+    return [
+        e
+        for e in location.get("present_entities", [])
+        if e.get("type") in {"npc", "enemy"}
+    ]
+
+
 def coerce_conversation_action(
     action: Action, context: dict, player_text: str = ""
 ) -> Action:
-    """Route free-form speech at a present NPC to talk instead of say/unknown."""
+    """Route free-form speech at a present NPC/enemy to talk instead of say/unknown."""
     text = (action.text or action.target or player_text or "").strip()
     location = context.get("location") or {}
-    npcs = [
-        e for e in location.get("present_entities", []) if e.get("type") == "npc"
-    ]
-    if not npcs:
+    partners = _conversable_entities(location)
+    if not partners:
         return action
-    names = [npc["name"] for npc in npcs]
+    names = [partner["name"] for partner in partners]
+    interaction = context.get("interaction") or {}
+    focus = interaction.get("focus_npc")
 
     if action.type == ActionType.talk:
         target = action.target or ""
         utterance = (action.text or player_text or "").strip()
         if target not in names:
-            matched = best_fuzzy_match(
-                extract_name_hint(utterance) or target or utterance, names
+            hint = (
+                extract_turn_to_target(utterance)
+                or extract_name_hint(utterance)
+                or target
+                or utterance
             )
+            matched = best_fuzzy_match(hint, names)
             if matched:
                 spoken = (action.text or player_text or "").strip() or None
                 return Action(
@@ -149,26 +165,56 @@ def coerce_conversation_action(
     if not text:
         return action
 
+    turn_target = extract_turn_to_target(text)
+    if turn_target:
+        matched = best_fuzzy_match(turn_target, names)
+        if matched:
+            return Action(type=ActionType.talk, target=matched, text=text)
+
     text_l = text.lower()
-    for npc in npcs:
-        name = npc["name"]
+    for partner in partners:
+        name = partner["name"]
         name_l = name.lower()
         first = name.split()[0].lower()
         if name_l in text_l or (len(first) > 2 and first in text_l):
             return Action(type=ActionType.talk, target=name, text=text)
 
+    if focus and any(word in text_l for word in ("you ", "your ", "reward me", " yet you")):
+        return Action(type=ActionType.talk, target=focus, text=text)
+
     matched = best_fuzzy_match(extract_name_hint(text) or text, names)
     if matched:
         return Action(type=ActionType.talk, target=matched, text=text)
 
-    if len(npcs) == 1:
-        return Action(type=ActionType.talk, target=npcs[0]["name"], text=text)
+    if len(partners) == 1:
+        return Action(type=ActionType.talk, target=partners[0]["name"], text=text)
 
-    # Multiple NPCs: continue with whoever the player was just speaking to.
-    for npc in npcs:
-        if npc.get("conversation"):
-            return Action(type=ActionType.talk, target=npc["name"], text=text)
+    for partner in partners:
+        if partner.get("conversation"):
+            return Action(type=ActionType.talk, target=partner["name"], text=text)
 
+    return action
+
+
+def coerce_talk_to_focus(
+    action: Action, context: dict, player_text: str = ""
+) -> Action:
+    """Send 'you...' follow-ups to whoever the player just spoke with."""
+    if action.type != ActionType.talk:
+        return action
+    focus = (context.get("interaction") or {}).get("focus_npc")
+    if not focus or action.target == focus:
+        return action
+    text = (action.text or player_text or "").lower()
+    if any(
+        phrase in text
+        for phrase in ("you ", "your ", "reward me", "yet you", "you are an enemy")
+    ):
+        return Action(
+            type=ActionType.talk,
+            target=focus,
+            text=action.text or player_text or None,
+        )
     return action
 
 
@@ -247,8 +293,12 @@ class Engine:
         except LLMError:
             action = Action(type=ActionType.unknown, text=player_text)
         return coerce_inventory_action(
-            coerce_attack_in_conversation(
-                coerce_conversation_action(action, context, player_text),
+            coerce_talk_to_focus(
+                coerce_attack_in_conversation(
+                    coerce_conversation_action(action, context, player_text),
+                    context,
+                    player_text,
+                ),
                 context,
                 player_text,
             ),

@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import re
+
 from ..state.models import DialogueGen, Entity, EntityGen, EntityType, ItemGrantGen
 from ..state.repository import Repository
+from .catalog import grant_spec_for_name
 from .equipment import try_auto_equip
 from .items import (
     add_item_to_inventory,
@@ -34,17 +37,33 @@ _GIVE_PHRASES = (
     "have these",
 )
 
-_REWARD_ASK_WORDS = (
-    "reward",
-    "pay",
-    "gold",
-    "payment",
-    "defeat",
-    "killed",
-    "beat",
-    "can i get",
-    "give me",
-    "hand over",
+_KILL_REWARD_PHRASES = (
+    "reward for",
+    "reward for defeating",
+    "reward for killing",
+    "payment for",
+    "paid for killing",
+    "since i defeated",
+    "since i killed",
+    "since i beat",
+    "for defeating",
+    "for killing",
+    "for beating",
+)
+
+_INFER_GRANT_PATTERNS = (
+    re.compile(
+        r"here(?:'s| is| are)\s+(?:a |an |the |some )?(.+?)(?:\s*[-—]|\s*[,;]|\s+may\b|\s+use\b|$)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:take|have|accept)\s+(?:this |these )?(?:a |an |the )?(.+?)(?:\s*[-—]|\s*[,;]|$)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"i(?:'ll| will)? give you (?:a |an |the )?(.+?)(?:\s*[-—]|\s*[,;]|$)",
+        re.IGNORECASE,
+    ),
 )
 
 
@@ -54,11 +73,44 @@ def npc_reply_indicates_transfer(npc_reply: str) -> bool:
     return any(phrase in text for phrase in _GIVE_PHRASES)
 
 
-def _player_asked_for_reward(player_said: str | None) -> bool:
+def _player_asked_for_kill_reward(player_said: str | None) -> bool:
+    """True when the player is claiming payment for defeating a foe."""
     if not player_said:
         return False
     text = player_said.lower()
-    return any(word in text for word in _REWARD_ASK_WORDS)
+    if any(phrase in text for phrase in _KILL_REWARD_PHRASES):
+        return True
+    return bool(
+        re.search(r"\b(reward|payment)\b", text)
+        and re.search(r"\b(defeat|defeated|kill|killed|beat|beaten)\b", text)
+    )
+
+
+def _clean_inferred_item_name(raw: str) -> str:
+    name = raw.strip(" .,!?:;\"'")
+    name = re.sub(r"^(?:a |an |the |some )", "", name, flags=re.IGNORECASE)
+    return name.strip(" .,!?:;\"'")
+
+
+def infer_grants_from_reply(
+    repo: Repository, run_id: str, npc_reply: str
+) -> list[ItemGrantGen]:
+    """Fallback: extract item names when the LLM wrote prose but omitted grant_items."""
+    if not npc_reply_indicates_transfer(npc_reply):
+        return []
+    found: list[ItemGrantGen] = []
+    seen: set[str] = set()
+    for pattern in _INFER_GRANT_PATTERNS:
+        for match in pattern.finditer(npc_reply):
+            name = _clean_inferred_item_name(match.group(1))
+            if not name or len(name) < 3:
+                continue
+            key = name.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            found.append(grant_spec_for_name(repo, run_id, name, qty=1))
+    return found
 
 
 def _find_gold_stack(repo: Repository, player_id: str) -> tuple[Entity, int] | None:
@@ -110,19 +162,34 @@ def apply_dialogue_grants(
     *,
     defeated_enemies: list[str],
     player_said: str | None,
+    speaker_id: str | None = None,
 ) -> list[str]:
     """Turn structured NPC grants into inventory changes when the exchange warrants it."""
-    if not reply.grant_items and reply.grant_gold <= 0:
-        return []
-
     if not npc_reply_indicates_transfer(reply.npc_reply):
         return []
 
-    if _player_asked_for_reward(player_said) and not defeated_enemies:
+    if speaker_id:
+        speaker = repo.get_entity(speaker_id)
+        if speaker is not None and speaker.type == EntityType.enemy:
+            if repo.get_fact(run_id, speaker_id, "can_gift") != "true":
+                return []
+
+    grants = list(reply.grant_items)
+    if grants:
+        grants = [
+            grant_spec_for_name(repo, run_id, grant.name, qty=grant.qty)
+            for grant in grants
+        ]
+    if not grants and reply.grant_gold <= 0:
+        grants = infer_grants_from_reply(repo, run_id, reply.npc_reply)
+    if not grants and reply.grant_gold <= 0:
+        return []
+
+    if _player_asked_for_kill_reward(player_said) and not defeated_enemies:
         return []
 
     granted: list[str] = []
-    for item_grant in reply.grant_items:
+    for item_grant in grants:
         granted.append(grant_item_to_player(repo, run_id, player_id, item_grant))
     gold_note = grant_gold_to_player(repo, run_id, player_id, reply.grant_gold)
     if gold_note:

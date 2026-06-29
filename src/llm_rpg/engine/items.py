@@ -59,10 +59,24 @@ def resolve_or_create_item(
     repo: Repository, run_id: str, gen: EntityGen | ItemGrantGen
 ) -> tuple[Entity, bool]:
     """Return an item entity, creating it only when the name is new."""
+    from .catalog import catalog_template_for_name
+
     existing = find_item_by_name(repo, run_id, gen.name)
     if existing is not None:
         _apply_item_template(repo, run_id, existing.id, gen)
         return existing, False
+
+    template = catalog_template_for_name(repo, run_id, gen.name)
+    if template is not None and isinstance(template, EntityGen):
+        if not gen.stats:
+            gen = template
+        else:
+            gen = EntityGen(
+                type=EntityType.item,
+                name=normalize_item_base_name(gen.name),
+                stats=gen.stats or template.stats,
+                facts=gen.facts or template.facts,
+            )
 
     canonical = normalize_item_base_name(gen.name)
     item = repo.create_entity(run_id, EntityType.item, canonical)

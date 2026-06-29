@@ -153,10 +153,32 @@ class LocationGen(BaseModel):
     entities: list[EntityGen] = Field(default_factory=list)
 
 
+class CatalogItemGen(BaseModel):
+    """A canonical item definition for this run's world (stats, slot, effects)."""
+
+    name: str
+    description: str = ""
+    slot: str = Field(
+        description="weapon, armor, consumable, or misc — defines how the item behaves.",
+    )
+    stats: list[StatGen] = Field(
+        default_factory=list,
+        description="Mechanical values: attack, defense, heal_hp, etc.",
+    )
+    facts: list[FactGen] = Field(default_factory=list)
+
+
 class SeedGen(BaseModel):
     """The opening world the LLM seeds from the player's world prompt."""
 
     genre: str
+    item_catalog: list[CatalogItemGen] = Field(
+        default_factory=list,
+        description=(
+            "Canonical items for this world (3-8 entries). All spawned/granted items "
+            "should use these names. Consumables need heal_hp stat; weapons need attack."
+        ),
+    )
     starting_location: LocationGen
     player_name: str
     player_facts: list[FactGen] = Field(default_factory=list)

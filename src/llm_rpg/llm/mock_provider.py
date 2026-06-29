@@ -234,6 +234,21 @@ class MockProvider(LLMProvider):
         start_name = f"{self._pick(h + 'd', _DESCRIPTOR_WORDS)} {self._pick(h + 'p', _PLACE_WORDS)}"
         payload = {
             "genre": "adventure",
+            "item_catalog": [
+                {
+                    "name": "Traveler's Blade",
+                    "description": "A well-worn sword.",
+                    "slot": "weapon",
+                    "stats": [{"key": "attack", "value": 3.0}],
+                },
+                {
+                    "name": "Healing Potion",
+                    "description": "Restores 20 HP.",
+                    "slot": "consumable",
+                    "stats": [{"key": "heal_hp", "value": 20.0}],
+                    "facts": [{"key": "consumable", "value": "true"}],
+                },
+            ],
             "starting_location": {
                 "name": start_name,
                 "region": "world",
@@ -261,6 +276,7 @@ class MockProvider(LLMProvider):
             "player_facts": [{"key": "origin", "value": "unknown"}],
             "player_stats": [
                 {"key": "hp", "value": 20.0},
+                {"key": "max_hp", "value": 20.0},
                 {"key": "attack", "value": 5.0},
             ],
             "starting_items": [

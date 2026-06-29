@@ -64,6 +64,52 @@ def test_commentary_grants_are_ignored(repo: Repository):
     assert repo.inventory(player.id) == []
 
 
+def test_inferred_grant_from_here_is_phrase(repo: Repository):
+    run = repo.create_run("w", seed=1)
+    player = repo.create_entity(run.id, EntityType.player, "Hero")
+    reply = DialogueGen(
+        npc_reply=(
+            "I think it would be wise for me to provide you with something to aid "
+            "in your quest. Here is a Potion of Healing - may it help you in the "
+            "battles ahead."
+        ),
+    )
+    granted = apply_dialogue_grants(
+        repo,
+        run.id,
+        player.id,
+        reply,
+        defeated_enemies=[],
+        player_said=(
+            "I have no gold for the villagers. Can you provide me with something "
+            "magical to defeat these goblins"
+        ),
+    )
+    assert granted == ["Potion of Healing"]
+    assert any(
+        "Potion of Healing" in item.name
+        for item, _qty in repo.inventory(player.id)
+    )
+
+
+def test_mentioning_gold_does_not_block_npc_gift(repo: Repository):
+    run = repo.create_run("w", seed=1)
+    player = repo.create_entity(run.id, EntityType.player, "Hero")
+    reply = DialogueGen(
+        npc_reply="Here is a Potion of Healing - use it well.",
+        grant_items=[ItemGrantGen(name="Potion of Healing", qty=1)],
+    )
+    granted = apply_dialogue_grants(
+        repo,
+        run.id,
+        player.id,
+        reply,
+        defeated_enemies=[],
+        player_said="I have no gold but I need help",
+    )
+    assert granted == ["Potion of Healing"]
+
+
 def test_fuzzy_npc_name_match():
     assert best_fuzzy_match("ragmar", ["Rigmar the Wanderer"]) == "Rigmar the Wanderer"
 

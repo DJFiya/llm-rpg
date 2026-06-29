@@ -47,10 +47,34 @@ def best_fuzzy_match(
     return best_name
 
 
+def extract_turn_to_target(text: str) -> str | None:
+    """Pull who the player turns to, e.g. 'turn to the goblin pack and ask'."""
+    match = re.search(
+        r"\bturn to (?:the )?(.+?) and (?:i )?(?:ask|say|tell|speak)",
+        text.strip(),
+        flags=re.IGNORECASE,
+    )
+    if match:
+        return match.group(1).strip(" .'\"")
+    return None
+
+
+def extract_asked_question(text: str) -> str | None:
+    """Pull the question from 'ask them what their business is'."""
+    match = re.search(
+        r"\bask (?:them|him|her|it) (?:what |why |how |if |whether )?(.+)$",
+        text.strip(),
+        flags=re.IGNORECASE,
+    )
+    if match:
+        return match.group(1).strip(" .'\"?")
+    return None
+
+
 def extract_name_hint(text: str) -> str | None:
     """Pull a likely NPC name from phrases like 'i ask rigmar'."""
     match = re.search(
-        r"\b(?:ask|tell|talk to|speak to|say to|tell)\s+([a-z][a-z' -]{1,40})",
+        r"\b(?:ask|tell|talk to|speak to|say to)\s+(?:the )?([a-z][a-z' -]{1,40})",
         text.strip(),
         flags=re.IGNORECASE,
     )

@@ -42,6 +42,8 @@ def generate_npc_reply(
             "defeated_enemies", []
         ),
         "player_inventory": (world_context.get("player") or {}).get("inventory", []),
+        "item_catalog": world_context.get("item_catalog", []),
+        "speaker_type": npc.type.value,
     }
     user = (
         f"Generate {npc.name}'s spoken reply.\n\n"
@@ -77,4 +79,5 @@ def persist_dialogue(
         reply,
         defeated_enemies=defeated_enemies or [],
         player_said=player_said,
+        speaker_id=npc_id,
     )

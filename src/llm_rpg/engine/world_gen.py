@@ -18,6 +18,7 @@ from ..llm.prompts import (
     GENERATE_SEED_SYSTEM,
 )
 from ..state.models import (
+    CatalogItemGen,
     EntityGen,
     EntityType,
     Location,
@@ -27,7 +28,9 @@ from ..state.models import (
 )
 from ..state.repository import Repository
 from . import consistency
+from .catalog import catalog_context, materialize_catalog, merge_catalog
 from .equipment import try_auto_equip
+from .matching import normalize_item_base_name
 
 # Compass deltas on the stored coordinate grid. +y is north, +x is east.
 DIRECTION_DELTAS: dict[str, tuple[int, int]] = {
@@ -62,6 +65,35 @@ DIRECTION_NAMES: dict[str, str] = {
     "se": "southeast",
     "sw": "southwest",
 }
+
+
+def _slot_from_gen(gen: EntityGen) -> str:
+    for fact in gen.facts:
+        if fact.key == "slot":
+            return fact.value
+    if any(s.key == "attack" and s.value > 0 for s in gen.stats):
+        return "weapon"
+    if any(s.key == "defense" and s.value > 0 for s in gen.stats):
+        return "armor"
+    if any(s.key == "heal_hp" and s.value > 0 for s in gen.stats):
+        return "consumable"
+    return "misc"
+
+
+def _starting_items_as_catalog(starting_items: list[EntityGen]) -> list[CatalogItemGen]:
+    entries: list[CatalogItemGen] = []
+    for item in starting_items:
+        if item.type != EntityType.item:
+            continue
+        entries.append(
+            CatalogItemGen(
+                name=normalize_item_base_name(item.name),
+                slot=_slot_from_gen(item),
+                stats=list(item.stats),
+                facts=list(item.facts),
+            )
+        )
+    return entries
 
 
 def _materialize_starting_item(
@@ -121,6 +153,7 @@ def _existing_world_summary(repo: Repository, run: Run) -> dict:
         "world_prompt": run.world_prompt,
         "genre": run.genre,
         "known_locations": [loc.name for loc in locations][-12:],
+        "item_catalog": catalog_context(repo, run.id),
     }
 
 
@@ -135,6 +168,10 @@ def generate_seed(repo: Repository, llm: LLMProvider, run: Run, retries: int) ->
     )
 
     repo.set_run_genre(run.id, seed.genre)
+    catalog = merge_catalog(
+        seed.item_catalog + _starting_items_as_catalog(seed.starting_items)
+    )
+    materialize_catalog(repo, run.id, catalog)
     start = _materialize_location(repo, run.id, seed.starting_location, x=0, y=0)
 
     player_name = consistency.unique_entity_name(repo, run.id, seed.player_name)
@@ -148,6 +185,8 @@ def generate_seed(repo: Repository, llm: LLMProvider, run: Run, retries: int) ->
     # Guarantee combat-critical stats exist even if the model omitted them.
     if repo.get_stat(player.id, "hp") is None:
         repo.set_stat(player.id, "hp", 20.0)
+    if repo.get_stat(player.id, "max_hp") is None:
+        repo.set_stat(player.id, "max_hp", repo.get_stat(player.id, "hp") or 20.0)
     if repo.get_stat(player.id, "attack") is None:
         repo.set_stat(player.id, "attack", 5.0)
 

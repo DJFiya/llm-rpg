@@ -24,8 +24,14 @@ from .equipment import (
     player_loadout,
     try_auto_equip,
 )
-from .matching import best_fuzzy_match, extract_name_hint
+from .matching import (
+    best_fuzzy_match,
+    extract_asked_question,
+    extract_name_hint,
+    extract_turn_to_target,
+)
 from .rewards import spawn_enemy_drops
+from .consumables import is_consumable, item_effect_summary, use_consumable
 
 
 @dataclass
@@ -57,7 +63,11 @@ def _find_present_entity(
 ) -> Entity | None:
     """Resolve a possibly-fuzzy target name to a present entity."""
     if not target and player_text:
-        target = extract_name_hint(player_text) or ""
+        target = (
+            extract_turn_to_target(player_text)
+            or extract_name_hint(player_text)
+            or ""
+        )
     if not target:
         return None
     target_l = target.strip().lower()
@@ -162,6 +172,11 @@ def _normalize_player_said(action: Action) -> str | None:
             remainder_first = remainder.lower().split()[0] if remainder else ""
             if not remainder or remainder_first == target_first:
                 return None
+    question = extract_asked_question(text)
+    if question:
+        return question
+    if extract_turn_to_target(text):
+        return extract_asked_question(text) or text
     return text
 
 
@@ -170,7 +185,10 @@ def handle_talk(ctx: TurnContext, action: Action) -> ActionResult:
     if not location_id:
         return ActionResult("talk", "There is no one to talk to.")
     entity = _find_present_entity(
-        ctx, location_id, action.target or "", player_text=action.text or ""
+        ctx,
+        location_id,
+        action.target or "",
+        player_text=action.text or "",
     )
     if entity is None or entity.type not in {EntityType.npc, EntityType.enemy}:
         target = action.target or "anyone"
@@ -386,7 +404,52 @@ def handle_use(ctx: TurnContext, action: Action) -> ActionResult:
     slot = item_slot(ctx.repo, ctx.run.id, item.id)
     if slot in {"weapon", "armor"}:
         return handle_equip(ctx, Action(type=ActionType.equip, target=item.name))
-    return ActionResult("use", f"You use the {item.name}.", {"item": item.name})
+
+    qty = ctx.repo.inventory_qty(ctx.run.player_id, item.id)
+    if is_consumable(ctx.repo, ctx.run.id, item.id):
+        result = use_consumable(
+            ctx.repo,
+            ctx.run.id,
+            ctx.run.player_id,
+            item.id,
+            qty=qty,
+        )
+        if result is None:
+            return ActionResult(
+                "use",
+                f"The {item.name} has no usable effect.",
+                {"failed": True},
+            )
+        ctx.repo.commit()
+        if result.heal_hp > 0:
+            summary = (
+                f"You drink the {result.item_name} and recover "
+                f"{int(result.heal_hp)} HP ({int(result.hp_before)} → "
+                f"{int(result.hp_after)})."
+            )
+        else:
+            summary = f"You use the {result.item_name}."
+        if result.qty_remaining > 1:
+            summary += f" ({result.qty_remaining} left)"
+        elif not result.consumed:
+            summary += f" ({result.qty_remaining} left)"
+        return ActionResult(
+            "use",
+            summary,
+            {
+                "item": result.item_name,
+                "heal_hp": result.heal_hp,
+                "hp_after": result.hp_after,
+                "qty_remaining": result.qty_remaining,
+            },
+        )
+
+    effect = item_effect_summary(ctx.repo, item.id)
+    return ActionResult(
+        "use",
+        f"You use the {item.name} ({effect}).",
+        {"item": item.name, "effect": effect},
+    )
 
 
 def handle_say(ctx: TurnContext, action: Action) -> ActionResult:

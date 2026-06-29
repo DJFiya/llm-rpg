@@ -14,7 +14,7 @@ single structured action. Choose the closest matching action type:
 - look: examine surroundings or a specific thing
 - move: travel in a compass direction (set 'direction' to one of n,s,e,w,ne,nw,se,sw)
 - take: pick up an item (set 'target' to the item name)
-- talk: speak to an NPC (set 'target' to the NPC name, 'text' to what is said)
+- talk: speak to an NPC or enemy (set 'target' to their name, 'text' to what is said)
 - attack: fight a target (set 'target' to the enemy name)
 - equip: wield or wear an item from inventory (set 'target' to the item name)
 - use: use an item (set 'target'); equips weapons/armor automatically
@@ -51,24 +51,30 @@ REQUIRED:
 - A vivid name and description for the place.
 - Include 1-3 interactable entities in 'entities': at least one must be an item, \
 npc, or enemy the player can take, talk to, or fight. Empty rooms are not allowed.
-- Items must include a 'slot' fact (weapon, armor, or misc) and relevant stats: \
-weapons need 'attack', armor needs 'defense'.
-- Give enemies 'hp' and 'attack' stats. Optional: 'drop_item' fact (single item name) \
-or 'drop_items' (comma-separated names) for loot left when defeated.
+- Items MUST use names from item_catalog when possible (exact names). Do not invent \
+new item names unless the catalog is empty.
+- Items must include a 'slot' fact (weapon, armor, consumable, or misc) and stats \
+from the catalog: weapons need 'attack', armor 'defense', consumables 'heal_hp'.
+- Give enemies 'hp' and 'attack' stats. Optional: 'drop_item' (catalog name) or \
+'drop_items' (comma-separated catalog names) for loot when defeated.
 - A few durable facts about the location itself.
 
 Do not reference characters or places outside this world. All interactables must \
 be listed in 'entities' — nothing exists unless it is in that list."""
 
 GENERATE_SEED_SYSTEM = """\
-You seed the opening of a brand-new text RPG from the player's description. \
-Establish a genre, a vivid starting location with 1-3 interactable entities \
-(at least one item, npc, or enemy), the player's name, starting stats (include \
-'hp' and 'attack'), 1-3 starting_items the player carries (each type 'item' with \
-slot fact and stats: weapons need attack, armor needs defense), and an optional \
-opening quest. Everything must be internally consistent and match the requested \
-tone. All location interactables must appear in starting_location.entities; all \
-carried gear in starting_items."""
+You seed the opening of a brand-new text RPG from the player's description.
+
+REQUIRED:
+- genre and vivid starting_location with 1-3 interactable entities.
+- item_catalog: 4-8 canonical items for this world. Each entry needs name, slot \
+(weapon/armor/consumable/misc), stats with numeric values, and short description. \
+Consumables MUST include heal_hp (e.g. 15-30). Weapons need attack. Armor needs defense.
+- player_name, player_stats (hp, attack, max_hp), 1-3 starting_items using catalog names.
+- opening_quest optional.
+
+All location items and starting_items MUST use names from item_catalog. \
+Procedural generation later reuses this catalog — define effects here."""
 
 DIALOGUE_SYSTEM = """\
 You generate an NPC's spoken reply for a text RPG.
@@ -79,17 +85,20 @@ CRITICAL RULES:
 - If the player asks for advice, give concrete advice tied to known quests/facts.
 - You may reference the player's equipped gear and inventory when relevant \
 (see player.loadout in context).
+- item_catalog lists canonical items and numeric effects — only grant catalog items.
+- If speaker_type is enemy: do NOT give items unless npc.facts.can_gift is true. \
+Enemies should not hand out free loot in dialogue.
 - Do not invent new major characters or locations not implied by the context.
 - Keep the reply to 1-4 sentences of dialogue (what the NPC says aloud).
 - Put any new durable lore revealed in this exchange into new_facts (short key/value \
 pairs). Leave new_facts empty if nothing new was established.
-- When the NPC actually gives the player items or gold THIS turn, list them in \
-grant_items (with qty) and/or grant_gold. Leave both empty if nothing is handed over.
-- ONLY populate grant_items/grant_gold when the npc_reply clearly transfers goods \
-(use phrases like "take this", "here is", "I give you"). Commentary or questions \
-about items must leave grants empty.
-- ONLY grant rewards the player has earned (e.g. defeated_enemies must include the \
-foe they beat before paying for that kill). Match quantities to what the NPC says.
+- When the NPC actually gives the player items or gold THIS turn, you MUST list them in \
+grant_items (with qty) and/or grant_gold — the engine only materializes items from those \
+fields (or parses them from transfer phrases in npc_reply as a fallback).
+- Populate grant_items whenever npc_reply uses transfer language ("here is", "take this", \
+"I give you"). Commentary or questions about items must leave grants empty.
+- Quest aid (potions, gear, gold) may be granted when the NPC chooses to help — kill \
+bounties are different: only pay for a kill if defeated_enemies includes that foe.
 - For stackable goods (gold, potions), set qty accordingly. Gold uses grant_gold."""
 
 NARRATE_SYSTEM = """\
