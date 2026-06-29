@@ -1,5 +1,10 @@
 .env
 venv/
 __pycache__/
+.pytest_cache/
 .DS_Store
 *.db
+# Local user config (copied from config.example.yaml)
+config.yaml
+# Keep the saves directory but ignore the save databases themselves.
+!saves/.gitkeep

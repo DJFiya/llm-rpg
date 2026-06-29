@@ -40,9 +40,13 @@ class Repository:
 
     # --- Runs -----------------------------------------------------------------
     def create_run(
-        self, world_prompt: str, seed: int, genre: str | None = None
+        self,
+        world_prompt: str,
+        seed: int,
+        genre: str | None = None,
+        run_id: str | None = None,
     ) -> Run:
-        run_id = new_id("run")
+        run_id = run_id or new_id("run")
         ts = _now()
         self.conn.execute(
             """INSERT INTO runs (id, world_prompt, genre, seed, turn, created_at, updated_at)

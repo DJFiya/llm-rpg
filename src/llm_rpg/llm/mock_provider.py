@@ -174,8 +174,9 @@ class MockProvider(LLMProvider):
         return json.dumps(payload)
 
     def _narrate(self, user: str) -> str:
-        # Pull the engine's plain-text outcome summary out of the context, if any.
-        match = re.search(r'"summary":\s*"([^"]+)"', user)
-        if match:
-            return match.group(1)
+        # The outcome-to-narrate block is appended after the context, so the
+        # action result's summary is the LAST "summary" field in the prompt.
+        matches = re.findall(r'"summary":\s*"((?:[^"\\]|\\.)*)"', user)
+        if matches:
+            return matches[-1].replace('\\"', '"').replace("\\\\", "\\")
         return "You take in the moment, and the world waits for your next move."
