@@ -8,6 +8,7 @@ from ..llm.base import LLMProvider
 from ..llm.prompts import DIALOGUE_SYSTEM
 from ..state.models import DialogueGen, Entity, Run
 from ..state.repository import Repository
+from .rewards import apply_dialogue_grants
 
 
 def generate_npc_reply(
@@ -37,6 +38,10 @@ def generate_npc_reply(
         "player_says": player_said or "",
         "active_quests": world_context.get("active_quests", []),
         "location": world_context.get("location"),
+        "defeated_enemies": world_context.get("interaction", {}).get(
+            "defeated_enemies", []
+        ),
+        "player_inventory": (world_context.get("player") or {}).get("inventory", []),
     }
     user = (
         f"Generate {npc.name}'s spoken reply.\n\n"
@@ -52,10 +57,24 @@ def persist_dialogue(
     turn: int,
     player_said: str | None,
     reply: DialogueGen,
-) -> None:
-    """Save the exchange and any new durable facts revealed by the NPC."""
+    *,
+    player_id: str | None = None,
+    defeated_enemies: list[str] | None = None,
+) -> list[str]:
+    """Save the exchange, facts, and any item grants."""
     if player_said:
         repo.log_conversation(run_id, npc_id, turn, "player", player_said)
     repo.log_conversation(run_id, npc_id, turn, "npc", reply.npc_reply)
     for fact in reply.new_facts:
         repo.set_fact(run_id, npc_id, fact.key, fact.value)
+
+    if player_id is None:
+        return []
+    return apply_dialogue_grants(
+        repo,
+        run_id,
+        player_id,
+        reply,
+        defeated_enemies=defeated_enemies or [],
+        player_said=player_said,
+    )

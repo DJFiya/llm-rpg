@@ -22,6 +22,16 @@ single structured action. Choose the closest matching action type:
 - inventory: check carried items (also: "what items do I have", "what am I carrying")
 - unknown: anything that doesn't fit
 
+IMPORTANT for talk vs attack:
+- Use the interaction block: focus_npc is who the player was last speaking with; \
+last_outcome is what just happened.
+- Questions or hypotheticals directed at an NPC are talk, NOT attack — even if they \
+mention fighting. Examples:
+  - "If I fight the golem will you help me?" -> talk, target=focus_npc, text=full question
+  - "Can you reward me for killing it?" -> talk to the relevant NPC
+- Only use attack for clear, immediate combat intent: "attack the golem", "kill it", \
+"strike the guard".
+
 IMPORTANT for talk:
 - If the player addresses an NPC by name, asks them a question, or continues a \
 conversation with someone present, use talk (not say).
@@ -43,7 +53,8 @@ REQUIRED:
 npc, or enemy the player can take, talk to, or fight. Empty rooms are not allowed.
 - Items must include a 'slot' fact (weapon, armor, or misc) and relevant stats: \
 weapons need 'attack', armor needs 'defense'.
-- Give enemies 'hp' and 'attack' stats. Give items and npcs a few short facts.
+- Give enemies 'hp' and 'attack' stats. Optional: 'drop_item' fact (single item name) \
+or 'drop_items' (comma-separated names) for loot left when defeated.
 - A few durable facts about the location itself.
 
 Do not reference characters or places outside this world. All interactables must \
@@ -71,7 +82,12 @@ CRITICAL RULES:
 - Do not invent new major characters or locations not implied by the context.
 - Keep the reply to 1-4 sentences of dialogue (what the NPC says aloud).
 - Put any new durable lore revealed in this exchange into new_facts (short key/value \
-pairs). Leave new_facts empty if nothing new was established."""
+pairs). Leave new_facts empty if nothing new was established.
+- When the NPC actually gives the player items or gold THIS turn, list them in \
+grant_items (with qty) and/or grant_gold. Leave both empty if nothing is handed over.
+- ONLY grant rewards the player has earned (e.g. defeated_enemies must include the \
+foe they beat before paying for that kill). Match quantities to what the NPC says.
+- For stackable goods (gold, potions), set qty accordingly. Gold uses grant_gold."""
 
 NARRATE_SYSTEM = """\
 You are the landscape narrator of a text RPG. Your ONLY job is to describe the \

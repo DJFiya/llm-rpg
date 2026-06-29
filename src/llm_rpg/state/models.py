@@ -168,6 +168,15 @@ class SeedGen(BaseModel):
     opening_quest: str | None = None
 
 
+class ItemGrantGen(BaseModel):
+    """An item the NPC gives the player this turn (materialized into inventory)."""
+
+    name: str
+    qty: int = Field(default=1, ge=1)
+    facts: list[FactGen] = Field(default_factory=list)
+    stats: list[StatGen] = Field(default_factory=list)
+
+
 class DialogueGen(BaseModel):
     """An NPC's spoken reply, validated before it becomes ground truth."""
 
@@ -175,4 +184,13 @@ class DialogueGen(BaseModel):
     new_facts: list[FactGen] = Field(
         default_factory=list,
         description="Optional durable facts revealed in this exchange.",
+    )
+    grant_items: list[ItemGrantGen] = Field(
+        default_factory=list,
+        description="Items the NPC actually gives the player this turn.",
+    )
+    grant_gold: int = Field(
+        default=0,
+        ge=0,
+        description="Gold coins added to the player's purse when the NPC pays them.",
     )

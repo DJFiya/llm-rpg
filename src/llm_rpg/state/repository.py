@@ -223,10 +223,32 @@ class Repository:
                WHERE el.location_id = ?""",
             (location_id,),
         ).fetchall()
-        result = [Entity.model_validate(dict(r)) for r in rows]
+        result = [
+            Entity.model_validate(dict(r))
+            for r in rows
+            if dict(r).get("status") != "dead"
+        ]
         if exclude_id:
             result = [e for e in result if e.id != exclude_id]
         return result
+
+    def defeated_enemies(self, run_id: str) -> list[Entity]:
+        rows = self.conn.execute(
+            """SELECT * FROM entities
+               WHERE run_id = ? AND type = 'enemy' AND status = 'dead'""",
+            (run_id,),
+        ).fetchall()
+        return [Entity.model_validate(dict(r)) for r in rows]
+
+    def recent_conversation_npc_name(self, run_id: str) -> str | None:
+        row = self.conn.execute(
+            """SELECT e.name FROM conversation_log cl
+               JOIN entities e ON e.id = cl.entity_id
+               WHERE cl.run_id = ? AND e.type = 'npc'
+               ORDER BY cl.id DESC LIMIT 1""",
+            (run_id,),
+        ).fetchone()
+        return row["name"] if row else None
 
     # --- Entity location ------------------------------------------------------
     def place_entity(

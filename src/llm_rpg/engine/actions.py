@@ -24,6 +24,7 @@ from .equipment import (
     player_loadout,
     try_auto_equip,
 )
+from .rewards import spawn_enemy_drops
 
 
 @dataclass
@@ -161,8 +162,17 @@ def handle_talk(ctx: TurnContext, action: Action) -> ActionResult:
         world_context=ctx.world_context,
         retries=ctx.retries,
     )
-    persist_dialogue(
-        ctx.repo, ctx.run.id, entity.id, ctx.turn, player_said, reply
+    granted = persist_dialogue(
+        ctx.repo,
+        ctx.run.id,
+        entity.id,
+        ctx.turn,
+        player_said,
+        reply,
+        player_id=ctx.run.player_id,
+        defeated_enemies=ctx.world_context.get("interaction", {}).get(
+            "defeated_enemies", []
+        ),
     )
     ctx.repo.commit()
 
@@ -173,6 +183,9 @@ def handle_talk(ctx: TurnContext, action: Action) -> ActionResult:
         )
     else:
         summary = f"{entity.name} replies: '{reply.npc_reply}'"
+
+    if granted:
+        summary += f" You receive: {', '.join(granted)}."
     return ActionResult(
         "talk",
         summary,
@@ -181,6 +194,7 @@ def handle_talk(ctx: TurnContext, action: Action) -> ActionResult:
             "player_said": player_said or "",
             "npc_reply": reply.npc_reply,
             "new_facts": {f.key: f.value for f in reply.new_facts},
+            "granted": granted,
         },
     )
 
@@ -205,6 +219,9 @@ def handle_attack(ctx: TurnContext, action: Action) -> ActionResult:
         )
     except ConsistencyError as exc:
         return ActionResult("attack", str(exc), {"failed": True})
+    drops: list[str] = []
+    if result.defender_dead and location_id:
+        drops = spawn_enemy_drops(ctx.repo, ctx.run.id, location_id, entity)
     ctx.repo.commit()
 
     weapon = get_equipped(ctx.repo, ctx.run.id, ctx.run.player_id, "weapon")
@@ -217,6 +234,8 @@ def handle_attack(ctx: TurnContext, action: Action) -> ActionResult:
     ]
     if result.defender_dead:
         parts.append(f"{result.defender_name} falls, defeated.")
+        if drops:
+            parts.append(f"Left behind: {', '.join(drops)}.")
     else:
         parts.append(
             f"{result.defender_name} has {int(result.defender_hp)} HP left "
@@ -238,6 +257,7 @@ def handle_attack(ctx: TurnContext, action: Action) -> ActionResult:
             "player_hp": result.attacker_hp,
             "defender_dead": result.defender_dead,
             "player_dead": result.attacker_dead,
+            "drops": drops,
             "attack_used": result.attacker_attack_used,
             "defense_used": result.attacker_defense_used,
         },

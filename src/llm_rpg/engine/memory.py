@@ -34,6 +34,8 @@ def location_context(repo: Repository, run: Run, location_id: str) -> dict:
     player_id = run.player_id
     present = []
     for e in repo.entities_at(location_id, exclude_id=player_id):
+        if e.status == "dead":
+            continue
         entry = {
             "name": e.name,
             "type": e.type.value,
@@ -100,4 +102,12 @@ def build_context(repo: Repository, run: Run, memory_window: int) -> dict:
         {"turn": e.turn, "action": e.action_type, "outcome": e.outcome}
         for e in repo.recent_actions(run.id, memory_window)
     ]
+    recent = repo.recent_actions(run.id, 1)
+    last = recent[-1] if recent else None
+    context["interaction"] = {
+        "focus_npc": repo.recent_conversation_npc_name(run.id),
+        "last_action": last.action_type if last else None,
+        "last_outcome": last.outcome if last else "",
+        "defeated_enemies": [e.name for e in repo.defeated_enemies(run.id)],
+    }
     return context

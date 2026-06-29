@@ -203,6 +203,26 @@ class MockProvider(LLMProvider):
                 "The northern hills are our best lead."
             )
             facts = []
+        elif "reward" in player_l or "defeat" in player_l or "killed" in player_l:
+            reply = (
+                "Very well! Take this reward for your bravery — "
+                "ten gold and a pair of healing potions."
+            )
+            facts = []
+            return json.dumps(
+                {
+                    "npc_reply": reply,
+                    "new_facts": facts,
+                    "grant_items": [
+                        {
+                            "name": "Healing Potion",
+                            "qty": 2,
+                            "facts": [{"key": "slot", "value": "misc"}],
+                        }
+                    ],
+                    "grant_gold": 10,
+                }
+            )
         else:
             reply = "I hear you. Focus on the northern hills — that is where we must go."
             facts = []

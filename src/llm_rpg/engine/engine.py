@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import re
 from dataclasses import dataclass
 
 from ..config import Config
@@ -21,6 +22,88 @@ from ..state.repository import Repository
 from . import memory
 from .actions import HANDLERS, ActionResult, TurnContext
 from .narration import build_narrate_context, should_use_llm_narration
+
+_QUESTION_MARKERS = (
+    "?",
+    "will you",
+    "would you",
+    "could you",
+    "can you",
+    "if i ",
+    "if we ",
+    "should i",
+    "do you",
+    "are you",
+    "what if",
+    "how would",
+    "help me",
+)
+
+_IMPERATIVE_ATTACK = (
+    "attack ",
+    "kill ",
+    "strike ",
+    "fight the",
+    "fight ",
+    "hit ",
+)
+
+
+def _looks_like_question(text: str) -> bool:
+    t = text.strip().lower()
+    if "?" in t:
+        return True
+    if any(marker in t for marker in _QUESTION_MARKERS):
+        return True
+    return bool(
+        re.match(
+            r"^(what|why|how|when|where|who|which|if|will|would|can|could|should|do|does|did|are|is)\b",
+            t,
+        )
+    )
+
+
+def _conversation_focus(context: dict) -> str | None:
+    interaction = context.get("interaction") or {}
+    focus = interaction.get("focus_npc")
+    if focus:
+        return focus
+
+    location = context.get("location") or {}
+    npcs = [e for e in location.get("present_entities", []) if e.get("type") == "npc"]
+    with_convo = [n for n in npcs if n.get("conversation")]
+    if len(with_convo) == 1:
+        return with_convo[0]["name"]
+    if len(npcs) == 1:
+        return npcs[0]["name"]
+    return None
+
+
+def coerce_attack_in_conversation(
+    action: Action, context: dict, player_text: str = ""
+) -> Action:
+    """Hypothetical combat questions to an NPC are talk, not attack."""
+    if action.type != ActionType.attack:
+        return action
+    text = (player_text or action.text or "").strip()
+    if not text:
+        return action
+
+    text_l = text.lower()
+    if not _looks_like_question(text_l):
+        return action
+    if any(text_l.startswith(v) or text_l == v.strip() for v in _IMPERATIVE_ATTACK):
+        return action
+
+    focus = _conversation_focus(context)
+    if focus:
+        return Action(type=ActionType.talk, target=focus, text=text)
+
+    location = context.get("location") or {}
+    npcs = [e for e in location.get("present_entities", []) if e.get("type") == "npc"]
+    if len(npcs) == 1:
+        return Action(type=ActionType.talk, target=npcs[0]["name"], text=text)
+    return action
 
 
 @dataclass
@@ -111,10 +194,26 @@ class Engine:
 
     # --- Phase 1: interpret ---------------------------------------------------
     def interpret(self, player_text: str, context: dict) -> Action:
+        interpret_ctx = {
+            "interaction": context.get("interaction", {}),
+            "location": {
+                "name": (context.get("location") or {}).get("name"),
+                "present_entities": (context.get("location") or {}).get(
+                    "present_entities", []
+                ),
+                "exits": (context.get("location") or {}).get("exits", []),
+            },
+            "player": {
+                "name": (context.get("player") or {}).get("name"),
+                "inventory": (context.get("player") or {}).get("inventory", []),
+            },
+            "recent_events": context.get("recent_events", [])[-3:],
+            "active_quests": context.get("active_quests", []),
+        }
         user = (
             f"Player input: {player_text}\n\n"
             "Context (use these exact names where relevant):\n"
-            f"{json.dumps(context, ensure_ascii=False)}"
+            f"{json.dumps(interpret_ctx, ensure_ascii=False)}"
         )
         try:
             action = self.llm.generate_json(
@@ -126,7 +225,11 @@ class Engine:
         except LLMError:
             action = Action(type=ActionType.unknown, text=player_text)
         return coerce_inventory_action(
-            coerce_conversation_action(action, context, player_text),
+            coerce_attack_in_conversation(
+                coerce_conversation_action(action, context, player_text),
+                context,
+                player_text,
+            ),
             player_text,
         )
 

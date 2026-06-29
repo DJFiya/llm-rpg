@@ -83,6 +83,7 @@ def test_attack_kills_and_blocks_reattack(seeded_run, repo, llm, config):
     assert out.action_type == "attack"
     assert repo.get_entity(enemy.id).status == "dead"
 
-    # Attacking a corpse is rejected as inconsistent.
+    # Corpse is removed from the room; re-attacking fails as absent.
     out2 = engine.take_turn("attack the Training Dummy")
-    assert "already dead" in out2.summary.lower()
+    assert "training dummy" in out2.summary.lower()
+    assert "here" in out2.summary.lower()
