@@ -51,6 +51,17 @@ _IMPERATIVE_ATTACK = (
     "fight the",
     "fight ",
     "hit ",
+    "finish ",
+    "finish the",
+    "slay ",
+    "defeat ",
+    "destroy ",
+    "swing ",
+)
+
+_COMBAT_VERB = re.compile(
+    r"\b(finish|kill|slay|defeat|destroy|attack|strike|hit|swing|smite|cut down)\b",
+    re.IGNORECASE,
 )
 
 
@@ -196,6 +207,49 @@ def coerce_conversation_action(
     return action
 
 
+def _resolve_enemy_target(text: str, enemies: list[dict]) -> str | None:
+    text_l = text.lower()
+    for enemy in enemies:
+        name_l = enemy["name"].lower()
+        if name_l in text_l:
+            return enemy["name"]
+        for part in name_l.split():
+            if len(part) > 3 and part in text_l:
+                return enemy["name"]
+    if len(enemies) == 1:
+        return enemies[0]["name"]
+    return None
+
+
+def coerce_combat_imperative(
+    action: Action, context: dict, player_text: str = ""
+) -> Action:
+    """Route 'finish the golem' / 'swing at' lines to attack, not NPC banter."""
+    text = (player_text or action.text or "").strip()
+    if not text or not _COMBAT_VERB.search(text):
+        return action
+
+    location = context.get("location") or {}
+    enemies = [
+        e for e in location.get("present_entities", []) if e.get("type") == "enemy"
+    ]
+    if not enemies:
+        return action
+
+    target = _resolve_enemy_target(text, enemies)
+    if not target:
+        return action
+
+    if action.type in {
+        ActionType.talk,
+        ActionType.say,
+        ActionType.unknown,
+        ActionType.attack,
+    }:
+        return Action(type=ActionType.attack, target=target, text=None)
+    return action
+
+
 def coerce_talk_to_focus(
     action: Action, context: dict, player_text: str = ""
 ) -> Action:
@@ -295,7 +349,11 @@ class Engine:
         return coerce_inventory_action(
             coerce_talk_to_focus(
                 coerce_attack_in_conversation(
-                    coerce_conversation_action(action, context, player_text),
+                    coerce_conversation_action(
+                        coerce_combat_imperative(action, context, player_text),
+                        context,
+                        player_text,
+                    ),
                     context,
                     player_text,
                 ),

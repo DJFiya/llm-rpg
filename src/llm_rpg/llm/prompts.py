@@ -30,7 +30,9 @@ mention fighting. Examples:
   - "If I fight the golem will you help me?" -> talk, target=focus_npc, text=full question
   - "Can you reward me for killing it?" -> talk to the relevant NPC
 - Only use attack for clear, immediate combat intent: "attack the golem", "kill it", \
-"strike the guard".
+"strike the guard", "finish the golem", "swing at the enemy".
+- Reporting a kill to an NPC ("I defeated the golem, pay me") is talk — but actually \
+finishing a fight is attack if the enemy is still present.
 
 IMPORTANT for talk:
 - If the player addresses an NPC by name, asks them a question, or continues a \

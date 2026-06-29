@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from llm_rpg.config import Config
-from llm_rpg.engine.engine import Engine, coerce_attack_in_conversation
+from llm_rpg.engine.engine import Engine, coerce_attack_in_conversation, coerce_combat_imperative
 from llm_rpg.llm.mock_provider import MockProvider
 from llm_rpg.state.models import Action, ActionType, EntityType
 from llm_rpg.state.repository import Repository
@@ -45,6 +45,24 @@ def test_imperative_kill_stays_attack():
         action, context, player_text="kill golem"
     )
     assert coerced.type == ActionType.attack
+
+
+def test_finish_golem_becomes_attack_not_talk():
+    context = {
+        "interaction": {"focus_npc": "Traveler's Guide"},
+        "location": {
+            "present_entities": [
+                {"name": "Traveler's Guide", "type": "npc"},
+                {"name": "Rock Golem", "type": "enemy"},
+            ],
+        },
+    }
+    action = Action(type=ActionType.talk, target="Traveler's Guide", text="I finish the golem")
+    coerced = coerce_combat_imperative(
+        action, context, player_text="I finish the golem"
+    )
+    assert coerced.type == ActionType.attack
+    assert coerced.target == "Rock Golem"
 
 
 def test_dead_enemy_removed_from_room(seeded_run, repo, llm, config: Config):
@@ -108,3 +126,30 @@ def test_npc_reward_adds_to_inventory(repo: Repository, llm: MockProvider, confi
         qty for item, qty in gold if "gold" in item.name.lower()
     )
     assert total_gold >= 10
+
+
+def test_premature_kill_reward_blocked(repo: Repository):
+    from llm_rpg.engine.rewards import apply_dialogue_grants
+    from llm_rpg.state.models import DialogueGen
+
+    run = repo.create_run("w", seed=1)
+    player = repo.create_entity(run.id, EntityType.player, "Hero")
+    guide = repo.create_entity(run.id, EntityType.npc, "Traveler's Guide")
+    reply = DialogueGen(
+        npc_reply=(
+            "Ahah, I see you've finished the Rock Golem. Well done! "
+            "As promised, here is your reward: 50 gold coins."
+        ),
+        grant_gold=50,
+    )
+    granted = apply_dialogue_grants(
+        repo,
+        run.id,
+        player.id,
+        reply,
+        defeated_enemies=[],
+        player_said="I finish the golem",
+        speaker_id=guide.id,
+    )
+    assert granted == []
+    assert repo.inventory(player.id) == []

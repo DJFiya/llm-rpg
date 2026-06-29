@@ -49,6 +49,10 @@ _KILL_REWARD_PHRASES = (
     "for defeating",
     "for killing",
     "for beating",
+    "i finish",
+    "i finished",
+    "i killed",
+    "i defeated",
 )
 
 _INFER_GRANT_PATTERNS = (
@@ -64,6 +68,19 @@ _INFER_GRANT_PATTERNS = (
         r"i(?:'ll| will)? give you (?:a |an |the )?(.+?)(?:\s*[-—]|\s*[,;]|$)",
         re.IGNORECASE,
     ),
+)
+
+_GOLD_IN_TEXT = re.compile(r"(\d+)\s*gold(?:\s*coins?)?", re.IGNORECASE)
+
+_REJECT_ITEM_FRAGMENTS = (
+    "bounty",
+    "kill it",
+    "collect your",
+    "your reward",
+    "gold coin",
+    "gold coins",
+    "well done",
+    "as promised",
 )
 
 
@@ -82,8 +99,38 @@ def _player_asked_for_kill_reward(player_said: str | None) -> bool:
         return True
     return bool(
         re.search(r"\b(reward|payment)\b", text)
-        and re.search(r"\b(defeat|defeated|kill|killed|beat|beaten)\b", text)
+        and re.search(r"\b(defeat|defeated|kill|killed|beat|beaten|finish|finished)\b", text)
     )
+
+
+def _reply_claims_foe_defeated(npc_reply: str) -> bool:
+    text = npc_reply.lower()
+    return bool(
+        re.search(
+            r"\b(finished|defeated|killed|beat|well done|as promised)\b",
+            text,
+        )
+        and re.search(r"\b(reward|gold|payment|promised)\b", text)
+    )
+
+
+def _is_valid_grant_item_name(name: str) -> bool:
+    cleaned = name.strip()
+    if len(cleaned) < 2 or len(cleaned) > 35:
+        return False
+    lower = cleaned.lower()
+    if _GOLD_IN_TEXT.search(lower):
+        return False
+    if any(fragment in lower for fragment in _REJECT_ITEM_FRAGMENTS):
+        return False
+    if lower.startswith("your ") or lower.startswith("here "):
+        return False
+    return True
+
+
+def infer_gold_from_reply(npc_reply: str) -> int:
+    matches = [int(m) for m in _GOLD_IN_TEXT.findall(npc_reply)]
+    return matches[-1] if matches else 0
 
 
 def _clean_inferred_item_name(raw: str) -> str:
@@ -103,7 +150,7 @@ def infer_grants_from_reply(
     for pattern in _INFER_GRANT_PATTERNS:
         for match in pattern.finditer(npc_reply):
             name = _clean_inferred_item_name(match.group(1))
-            if not name or len(name) < 3:
+            if not name or not _is_valid_grant_item_name(name):
                 continue
             key = name.lower()
             if key in seen:
@@ -130,14 +177,14 @@ def grant_gold_to_player(
     if existing:
         item, qty = existing
         repo.add_to_inventory(player_id, item.id, amount)
-        return format_item_qty(f"{amount} gold (added to {item.name})", qty + amount)
+        return format_item_qty(item.name, qty + amount)
     gen = ItemGrantGen(
         name="Gold Coins",
         qty=amount,
         facts=[{"key": "kind", "value": "gold"}, {"key": "slot", "value": "misc"}],
     )
     item, total = add_item_to_inventory(repo, run_id, player_id, gen, qty=amount)
-    return format_item_qty(f"{amount} gold", total)
+    return format_item_qty(item.name, total)
 
 
 def grant_item_to_player(
@@ -147,6 +194,8 @@ def grant_item_to_player(
     grant: ItemGrantGen,
 ) -> str:
     """Add or stack an item in the player's inventory."""
+    if not _is_valid_grant_item_name(grant.name):
+        return ""
     item, total = add_item_to_inventory(
         repo, run_id, player_id, grant, qty=grant.qty
     )
@@ -174,24 +223,33 @@ def apply_dialogue_grants(
             if repo.get_fact(run_id, speaker_id, "can_gift") != "true":
                 return []
 
+    kill_reward_context = (
+        _player_asked_for_kill_reward(player_said)
+        or _reply_claims_foe_defeated(reply.npc_reply)
+    )
+    if kill_reward_context and not defeated_enemies:
+        return []
+
     grants = list(reply.grant_items)
     if grants:
         grants = [
             grant_spec_for_name(repo, run_id, grant.name, qty=grant.qty)
             for grant in grants
+            if _is_valid_grant_item_name(grant.name)
         ]
-    if not grants and reply.grant_gold <= 0:
+    if not grants:
         grants = infer_grants_from_reply(repo, run_id, reply.npc_reply)
-    if not grants and reply.grant_gold <= 0:
-        return []
 
-    if _player_asked_for_kill_reward(player_said) and not defeated_enemies:
+    gold_amount = reply.grant_gold or infer_gold_from_reply(reply.npc_reply)
+    if not grants and gold_amount <= 0:
         return []
 
     granted: list[str] = []
     for item_grant in grants:
-        granted.append(grant_item_to_player(repo, run_id, player_id, item_grant))
-    gold_note = grant_gold_to_player(repo, run_id, player_id, reply.grant_gold)
+        note = grant_item_to_player(repo, run_id, player_id, item_grant)
+        if note:
+            granted.append(note)
+    gold_note = grant_gold_to_player(repo, run_id, player_id, gold_amount)
     if gold_note:
         granted.append(gold_note)
     return granted
@@ -218,6 +276,8 @@ def spawn_enemy_drops(
         drop_names.extend(part.strip() for part in drop_list.split(",") if part.strip())
 
     for raw_name in drop_names:
+        if not _is_valid_grant_item_name(raw_name):
+            continue
         gen = EntityGen(
             type=EntityType.item,
             name=raw_name,

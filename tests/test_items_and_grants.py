@@ -92,6 +92,29 @@ def test_inferred_grant_from_here_is_phrase(repo: Repository):
     )
 
 
+def test_inferred_gold_not_prose_item(repo: Repository):
+    from llm_rpg.engine.rewards import apply_dialogue_grants, infer_grants_from_reply
+    from llm_rpg.state.models import DialogueGen
+
+    run = repo.create_run("w", seed=1)
+    player = repo.create_entity(run.id, EntityType.player, "Hero")
+    golem = repo.create_entity(run.id, EntityType.enemy, "Rock Golem")
+    repo.set_entity_status(golem.id, "dead")
+    reply = DialogueGen(
+        npc_reply="Well done! Here is your reward: 50 gold coins.",
+    )
+    assert infer_grants_from_reply(repo, run.id, reply.npc_reply) == []
+    granted = apply_dialogue_grants(
+        repo,
+        run.id,
+        player.id,
+        reply,
+        defeated_enemies=["Rock Golem"],
+        player_said="I killed the golem",
+    )
+    assert granted == ["Gold Coins x50"]
+
+
 def test_mentioning_gold_does_not_block_npc_gift(repo: Repository):
     run = repo.create_run("w", seed=1)
     player = repo.create_entity(run.id, EntityType.player, "Hero")
