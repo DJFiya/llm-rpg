@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from rich.console import Console
 from rich.panel import Panel
+from rich.progress import BarColumn, Progress, TextColumn, TimeElapsedColumn
 from rich.prompt import Prompt
 from rich.rule import Rule
 from rich.table import Table
@@ -18,8 +19,8 @@ from .rng import seed_from_text
 HELP_TEXT = """\
 Type what you want to do in plain language, or use a single-key shortcut:
 
-  [l] look around     [n] go north   [s] go south   [e] go east   [w] go west
-  [i] inventory       [m] map        [h] help       [q] quit
+  [[l]] look around     [[n]] go north   [[s]] go south   [[e]] go east   [[w]] go west
+  [[i]] inventory       [[m]] map        [[h]] help       [[q]] quit
 
 Examples: "take the rusty key", "equip sword", "talk to the stranger", "attack the wolf"
 """
@@ -163,14 +164,35 @@ class GameCLI:
 
         seed = seed_from_text(world_prompt)
         sess = session.create_session(self.config, world_prompt, seed)
-        with self.console.status("Seeding the world..."):
-            new_game.seed_world(
-                sess.repo, self.llm, sess.run, self.config.json_repair_retries
-            )
+        self._seed_world_with_progress(sess)
         refreshed = sess.repo.get_run(sess.run.id)
         if refreshed is not None:
             sess.run = refreshed
         return sess
+
+    def _seed_world_with_progress(self, sess: session.Session) -> None:
+        """Show a gaming-style loading bar while the world is generated."""
+        progress = Progress(
+            TextColumn("[bold cyan]{task.description}"),
+            BarColumn(bar_width=36, complete_style="green", finished_style="bright_green"),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TimeElapsedColumn(),
+            console=self.console,
+            transient=True,
+        )
+        task_id = progress.add_task("Loading...", total=100)
+
+        def on_progress(pct: int, message: str) -> None:
+            progress.update(task_id, completed=pct, description=message)
+
+        with progress:
+            new_game.seed_world(
+                sess.repo,
+                self.llm,
+                sess.run,
+                self.config.json_repair_retries,
+                on_progress=on_progress,
+            )
 
     # --- Play loop ------------------------------------------------------------
     def _play(self, sess: session.Session) -> None:

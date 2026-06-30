@@ -22,6 +22,8 @@ def test_seed_creates_player_and_location(seeded_run, repo: Repository):
     assert repo.get_stat(player.id, "attack") is not None
     # Player is placed in a starting location.
     assert repo.entity_location(seeded_run.player_id) is not None
+    # Initial map should include multiple pre-generated rooms.
+    assert len(repo.all_locations(seeded_run.id)) >= 5
 
 
 def test_look_then_move(seeded_run, repo, llm, config):
@@ -34,7 +36,9 @@ def test_look_then_move(seeded_run, repo, llm, config):
     move = engine.take_turn("go north")
     assert move.action_type == "move"
     after = len(repo.all_locations(seeded_run.id))
-    assert after == before + 1  # a new location was generated
+    # North is pre-connected on the initial map — no lazy generation.
+    assert after == before
+    assert "return to" in move.summary.lower() or "travel north" in move.summary.lower()
 
 
 def test_turn_is_logged_and_advances(seeded_run, repo, llm, config):

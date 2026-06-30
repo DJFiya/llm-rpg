@@ -168,6 +168,28 @@ class CatalogItemGen(BaseModel):
     facts: list[FactGen] = Field(default_factory=list)
 
 
+class MappedLocationGen(BaseModel):
+    """A location placed on the initial world grid (excluding the start at 0,0)."""
+
+    location: LocationGen
+    x: int
+    y: int
+
+
+class SeedConnectionGen(BaseModel):
+    """A directed exit between two locations on the initial map."""
+
+    from_location: str = Field(
+        description="Exact name of the source location (must match a seeded location).",
+    )
+    direction: str = Field(
+        description="Compass code: n, s, e, w, ne, nw, se, or sw.",
+    )
+    to_location: str = Field(
+        description="Exact name of the destination location.",
+    )
+
+
 class SeedGen(BaseModel):
     """The opening world the LLM seeds from the player's world prompt."""
 
@@ -180,6 +202,20 @@ class SeedGen(BaseModel):
         ),
     )
     starting_location: LocationGen
+    additional_locations: list[MappedLocationGen] = Field(
+        default_factory=list,
+        description=(
+            "7-9 more locations forming a connected starter map. "
+            "starting_location sits at (0,0); each entry needs unique coordinates."
+        ),
+    )
+    initial_connections: list[SeedConnectionGen] = Field(
+        default_factory=list,
+        description=(
+            "Exits linking all seeded locations into one connected graph. "
+            "Coordinates must match direction deltas from the source."
+        ),
+    )
     player_name: str
     player_facts: list[FactGen] = Field(default_factory=list)
     player_stats: list[StatGen] = Field(default_factory=list)

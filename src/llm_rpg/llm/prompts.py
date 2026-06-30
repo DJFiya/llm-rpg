@@ -68,12 +68,20 @@ GENERATE_SEED_SYSTEM = """\
 You seed the opening of a brand-new text RPG from the player's description.
 
 REQUIRED:
-- genre and vivid starting_location with 1-3 interactable entities.
+- genre and vivid starting_location (at coordinates 0,0) with 1-3 interactable entities.
+- additional_locations: 7-9 more locations with unique integer (x,y) coordinates \
+forming a small explorable region. Each needs 1-3 interactable entities.
+- initial_connections: enough exits to connect ALL locations into one traversable graph. \
+Use direction codes n/s/e/w/ne/nw/se/sw. from_location and to_location MUST match \
+location names exactly. Coordinates must match direction deltas (+y=north, +x=east).
 - item_catalog: 4-8 canonical items for this world. Each entry needs name, slot \
 (weapon/armor/consumable/misc), stats with numeric values, and short description. \
 Consumables MUST include heal_hp (e.g. 15-30). Weapons need attack. Armor needs defense.
 - player_name, player_stats (hp, attack, max_hp), 1-3 starting_items using catalog names.
-- opening_quest optional.
+- opening_quest: a clear hook tied to specific locations on this map (name them).
+
+Quest NPCs in starting_location should know where key places are — place quest-relevant \
+locations within 2-3 moves of the start when possible.
 
 All location items and starting_items MUST use names from item_catalog. \
 Procedural generation later reuses this catalog — define effects here."""
@@ -84,7 +92,12 @@ You generate an NPC's spoken reply for a text RPG.
 CRITICAL RULES:
 - Continue the conversation naturally. Do NOT reset or contradict conversation_history.
 - Stay consistent with the NPC's established facts and anything already said.
-- If the player asks for advice, give concrete advice tied to known quests/facts.
+- If the player asks for advice or directions, use ONLY locations and exits listed in \
+world_map and location.exits. Name real compass directions (north, east, etc.) that \
+actually exist — never invent paths, places, or exits not in world_map.
+- Tie quest guidance to active_quests and specific named locations from world_map.
+- If the player asks "which way" or "where do I go", give a concrete direction from \
+their current location using location.exits or world_map — not vague hand-waving.
 - You may reference the player's equipped gear and inventory when relevant \
 (see player.loadout in context).
 - item_catalog lists canonical items and numeric effects — only grant catalog items.

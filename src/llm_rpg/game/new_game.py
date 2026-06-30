@@ -8,6 +8,8 @@ player's actions.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from ..llm.base import LLMProvider
 from ..rng import GameRNG, seed_from_text
 from ..state.models import Location, Run
@@ -76,7 +78,14 @@ def random_prompt(seed_text: str | None = None) -> str:
 
 
 def seed_world(
-    repo: Repository, llm: LLMProvider, run: Run, retries: int = 2
+    repo: Repository,
+    llm: LLMProvider,
+    run: Run,
+    retries: int = 2,
+    *,
+    on_progress: Callable[[int, str], None] | None = None,
 ) -> Location:
     """Generate the opening location + player for a freshly created run."""
-    return world_gen.generate_seed(repo, llm, run, retries)
+    return world_gen.generate_seed(
+        repo, llm, run, retries, on_progress=on_progress
+    )

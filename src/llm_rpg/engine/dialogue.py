@@ -38,6 +38,7 @@ def generate_npc_reply(
         "player_says": player_said or "",
         "active_quests": world_context.get("active_quests", []),
         "location": world_context.get("location"),
+        "world_map": world_context.get("world_map"),
         "defeated_enemies": world_context.get("interaction", {}).get(
             "defeated_enemies", []
         ),

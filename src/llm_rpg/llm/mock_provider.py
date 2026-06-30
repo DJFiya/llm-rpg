@@ -232,6 +232,10 @@ class MockProvider(LLMProvider):
     def _seed(self, user: str) -> str:
         h = str(self._hash_int(user))
         start_name = f"{self._pick(h + 'd', _DESCRIPTOR_WORDS)} {self._pick(h + 'p', _PLACE_WORDS)}"
+        north_name = f"{self._pick(h + 'n1', _DESCRIPTOR_WORDS)} Hills"
+        east_name = f"{self._pick(h + 'e1', _PLACE_WORDS)} Trail"
+        forest_name = f"{self._pick(h + 'f1', _DESCRIPTOR_WORDS)} Forest"
+        cave_name = f"{self._pick(h + 'c1', _PLACE_WORDS)} Caverns"
         payload = {
             "genre": "adventure",
             "item_catalog": [
@@ -272,6 +276,86 @@ class MockProvider(LLMProvider):
                     },
                 ],
             },
+            "additional_locations": [
+                {
+                    "location": {
+                        "name": north_name,
+                        "region": "world",
+                        "description": "Rolling hills stretch under a wide sky.",
+                        "entities": [
+                            {
+                                "type": "enemy",
+                                "name": "Hill Bandit",
+                                "stats": [
+                                    {"key": "hp", "value": 12.0},
+                                    {"key": "attack", "value": 4.0},
+                                ],
+                            }
+                        ],
+                    },
+                    "x": 0,
+                    "y": 1,
+                },
+                {
+                    "location": {
+                        "name": east_name,
+                        "region": "world",
+                        "description": "A worn trail leads toward distant trees.",
+                        "entities": [
+                            {
+                                "type": "item",
+                                "name": "Healing Potion",
+                                "facts": [{"key": "slot", "value": "consumable"}],
+                                "stats": [{"key": "heal_hp", "value": 20.0}],
+                            }
+                        ],
+                    },
+                    "x": 1,
+                    "y": 0,
+                },
+                {
+                    "location": {
+                        "name": forest_name,
+                        "region": "world",
+                        "description": "Ancient trees crowd a mossy path.",
+                        "entities": [
+                            {
+                                "type": "npc",
+                                "name": "Forest Scout",
+                                "facts": [{"key": "role", "value": "missing scout"}],
+                            }
+                        ],
+                    },
+                    "x": 1,
+                    "y": 1,
+                },
+                {
+                    "location": {
+                        "name": cave_name,
+                        "region": "world",
+                        "description": "Dark caverns yawn beneath the forest floor.",
+                        "entities": [
+                            {
+                                "type": "enemy",
+                                "name": "Cave Wyrm",
+                                "stats": [
+                                    {"key": "hp", "value": 50.0},
+                                    {"key": "attack", "value": 11.0},
+                                ],
+                            }
+                        ],
+                    },
+                    "x": 2,
+                    "y": 1,
+                },
+            ],
+            "initial_connections": [
+                {"from_location": start_name, "direction": "n", "to_location": north_name},
+                {"from_location": start_name, "direction": "e", "to_location": east_name},
+                {"from_location": north_name, "direction": "e", "to_location": forest_name},
+                {"from_location": east_name, "direction": "n", "to_location": forest_name},
+                {"from_location": forest_name, "direction": "e", "to_location": cave_name},
+            ],
             "player_name": "Traveler",
             "player_facts": [{"key": "origin", "value": "unknown"}],
             "player_stats": [
@@ -290,7 +374,9 @@ class MockProvider(LLMProvider):
                     "stats": [{"key": "attack", "value": 3.0}],
                 },
             ],
-            "opening_quest": "Discover what lies beyond the first horizon.",
+            "opening_quest": (
+                f"Search the {north_name} and {forest_name} for signs of the missing scouts."
+            ),
         }
         return json.dumps(payload)
 

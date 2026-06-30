@@ -72,6 +72,37 @@ def location_context(repo: Repository, run: Run, location_id: str) -> dict:
     }
 
 
+def world_map_context(repo: Repository, run: Run) -> dict:
+    """Compact map overview for NPC dialogue and quest guidance."""
+    locations = repo.all_locations(run.id)
+    loc_by_id = {loc.id: loc for loc in locations}
+    nodes = []
+    for loc in locations:
+        exits = []
+        for conn in repo.connections_from(loc.id):
+            dest = loc_by_id.get(conn.to_location)
+            if dest is None:
+                continue
+            exits.append(
+                {
+                    "direction": DIRECTION_NAMES.get(conn.direction, conn.direction),
+                    "location": dest.name,
+                }
+            )
+        desc = loc.description
+        if len(desc) > 140:
+            desc = desc[:137] + "..."
+        nodes.append(
+            {
+                "name": loc.name,
+                "description": desc,
+                "coordinates": {"x": loc.x, "y": loc.y},
+                "exits": exits,
+            }
+        )
+    return {"locations": nodes, "location_count": len(nodes)}
+
+
 def build_context(repo: Repository, run: Run, memory_window: int) -> dict:
     """Assemble the full grounded context for the current turn."""
     player_id = run.player_id
@@ -112,4 +143,5 @@ def build_context(repo: Repository, run: Run, memory_window: int) -> dict:
         "defeated_enemies": [e.name for e in repo.defeated_enemies(run.id)],
     }
     context["item_catalog"] = catalog_context(repo, run.id)
+    context["world_map"] = world_map_context(repo, run)
     return context
